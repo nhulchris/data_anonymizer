@@ -1,0 +1,5 @@
+id,name,email,phone,address,dob,zip,ssn,ip_address,credit_card,order_total
+1,John Smith,john.smith@example.com,612-555-1234,100 Main St,1988-03-16,55416,123-45-6789,192.168.1.10,4111111111111111,19.99
+2,Mary Jones,mary.jones@example.org,651-555-9876,22 Oak Ave,1975-11-02,55101,987-65-4321,10.0.0.7,5500005555555559,5.00
+3,John Smith,john.smith@example.com,612-555-1234,100 Main St,1988-03-16,55416,123-45-6789,192.168.1.10,4111111111111111,42.10
+4,Tom Lee,tom.lee@example.net,763-555-4321,9 Pine Rd,1992-07-30,55428,111-22-3333,172.16.0.3,340000000000009,120.00

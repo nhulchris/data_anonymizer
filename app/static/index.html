@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Data Anonymizer</title>
+<style>
+  /* Minimal FP3 UI -- Sophie owns the real UI going forward */
+  body { font-family: system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; color: #1a1a2e; }
+  h1 { font-size: 1.5rem; }
+  .card { border: 1px solid #d0d0e0; border-radius: 8px; padding: 20px; margin: 16px 0; }
+  button { background: #2f3c7e; color: #fff; border: 0; border-radius: 6px; padding: 10px 18px; font-size: 1rem; cursor: pointer; }
+  button:disabled { background: #aab; cursor: default; }
+  table { border-collapse: collapse; width: 100%; margin-top: 12px; }
+  th, td { border: 1px solid #d0d0e0; padding: 6px 10px; text-align: left; font-size: 0.9rem; }
+  th { background: #f2f3fa; }
+  #status { margin-top: 10px; font-size: 0.9rem; }
+</style>
+</head>
+<body>
+  <h1>Data Anonymizer <small>(ICS 499 Team 13 &mdash; FP3)</small></h1>
+  <div class="card">
+    <p>Upload a CSV. PII columns are detected automatically; download replaces them with realistic synthetic values (consistent within the file).</p>
+    <input type="file" id="file" accept=".csv">
+    <button id="detectBtn">Detect PII</button>
+    <button id="anonBtn" disabled>Anonymize &amp; Download</button>
+    <div id="status"></div>
+    <div id="report"></div>
+  </div>
+<script>
+  const fileInput = document.getElementById('file');
+  const detectBtn = document.getElementById('detectBtn');
+  const anonBtn = document.getElementById('anonBtn');
+  const statusEl = document.getElementById('status');
+  const reportEl = document.getElementById('report');
+
+  function formData() {
+    const f = fileInput.files[0];
+    if (!f) { statusEl.textContent = 'Choose a CSV file first.'; return null; }
+    const fd = new FormData();
+    fd.append('file', f);
+    return fd;
+  }
+
+  detectBtn.onclick = async () => {
+    const fd = formData(); if (!fd) return;
+    statusEl.textContent = 'Detecting...';
+    const res = await fetch('/api/detect', { method: 'POST', body: fd });
+    if (!res.ok) { statusEl.textContent = 'Error: ' + (await res.json()).detail; return; }
+    const data = await res.json();
+    statusEl.textContent = data.row_count + ' rows, ' + data.detected.length + ' PII column(s) detected.';
+    reportEl.innerHTML = data.detected.length
+      ? '<table><tr><th>Column</th><th>PII Type</th><th>Technique</th></tr>' +
+        data.detected.map(d => '<tr><td>' + d.column + '</td><td>' + d.pii_type + '</td><td>' + d.technique + '</td></tr>').join('') +
+        '</table>'
+      : '<p>No PII columns detected.</p>';
+    anonBtn.disabled = data.detected.length === 0;
+  };
+
+  anonBtn.onclick = async () => {
+    const fd = formData(); if (!fd) return;
+    statusEl.textContent = 'Anonymizing...';
+    const res = await fetch('/api/anonymize', { method: 'POST', body: fd });
+    if (!res.ok) { statusEl.textContent = 'Error: ' + (await res.json()).detail; return; }
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = (fileInput.files[0].name.replace(/\.csv$/i, '')) + '_anonymized.csv';
+    a.click();
+    statusEl.textContent = 'Done - anonymized file downloaded.';
+  };
+</script>
+</body>
+</html>

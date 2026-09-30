@@ -31,7 +31,7 @@ app/        FastAPI app + static UI        (owner: Chris; UI lead: Sophie)
 engine/     detection, mapping, pipeline   (owner: Chris)
 engine/techniques/  pluggable techniques   (substitution done; masking,
                                             generalization, nulling: Sophie)
-parsers/    CSV done; JSON done, SQL, TXT next  (owner: Sophie)
+parsers/    CSV done; JSON, SQL, TXT next  (owner: Sophie)
 tests/      pytest suite                   (shared)
 samples/    demo datasets
 ```
@@ -45,10 +45,15 @@ samples/    demo datasets
 - Detection is column-name-first with a value-pattern fallback; 9 PII types:
   name, email, phone, address, dob, zip, ssn, ip, card.
 
+  ## Known limitations
 
-## Known limitations
-
-The JSON parser reads its column headers from the first record in the file. If a later record has a field the first record doesn't (for example, the first customer has no email but a later one does), that field is silently dropped rather than added as a new column. This is a deliberate simplification for this project's scope, not a bug — a more robust version would scan every record to build the full set of headers before converting to rows.
+- The JSON parser reads its column headers from the first record in the
+  file. If a later record has a field the first record doesn't (for
+  example, the first customer has no `email` but a later one does), that
+  field is silently dropped rather than added as a new column. This is a
+  deliberate simplification for this project's scope, not a bug — a more
+  robust version would scan every record to build the full set of headers
+  before converting to rows.
 
 ## Docs
 

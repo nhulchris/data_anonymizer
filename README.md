@@ -31,7 +31,11 @@ app/        FastAPI app + static UI        (owner: Chris; UI lead: Sophie)
 engine/     detection, mapping, pipeline   (owner: Chris)
 engine/techniques/  pluggable techniques   (substitution done; masking,
                                             generalization, nulling: Sophie)
+<<<<<<< HEAD
 parsers/    CSV ; JSON , SQL done, TXT next  (owner: Sophie)
+=======
+parsers/    CSV done; JSON done, SQL, TXT next  (owner: Sophie)
+>>>>>>> ad9e247ed07d347aa196c23380fe8b94642d35f2
 tests/      pytest suite                   (shared)
 samples/    demo datasets
 ```

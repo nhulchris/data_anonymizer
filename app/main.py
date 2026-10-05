@@ -10,13 +10,15 @@ Endpoints:
 from __future__ import annotations
 
 import io
+import json
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 
 from engine import pipeline
 from engine.mapping import MappingStore
+from engine.pipeline import ColumnPlan
 from engine.techniques import available_techniques
 from parsers import csv_parser
 
@@ -68,9 +70,31 @@ async def detect(file: UploadFile = File(...)):
 
 
 @app.post("/api/anonymize")
-async def anonymize(file: UploadFile = File(...), seed: str = "team13-dev-seed"):
+async def anonymize(
+    file: UploadFile = File(...),
+    plan_json: str | None = Form(None),
+    seed: str = Form("team13-dev-seed"),
+):
+    """Anonymize an upload. `plan_json` (optional) is the detect plan edited
+    by the user: a JSON list of {"column", "pii_type", "technique"}. Without
+    it, the auto-detected plan with the default technique is used.
+    """
     headers, rows = await _read_csv_upload(file)
-    plan = pipeline.build_plan(headers, rows)
+    if plan_json:
+        try:
+            raw = json.loads(plan_json)
+            valid = set(available_techniques())
+            plan = []
+            for item in raw:
+                if item["column"] not in headers:
+                    raise HTTPException(422, f"Unknown column: {item['column']!r}")
+                if item["technique"] not in valid:
+                    raise HTTPException(422, f"Unknown technique: {item['technique']!r}")
+                plan.append(ColumnPlan(item["column"], item["pii_type"], item["technique"]))
+        except (json.JSONDecodeError, KeyError, TypeError):
+            raise HTTPException(400, "plan_json must be a JSON list of {column, pii_type, technique}")
+    else:
+        plan = pipeline.build_plan(headers, rows)
     if not plan:
         raise HTTPException(422, "No PII columns detected in this file")
     result = pipeline.run(headers, rows, plan, MappingStore(seed=seed))

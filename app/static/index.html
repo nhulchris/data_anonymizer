@@ -18,7 +18,7 @@
 </style>
 </head>
 <body>
-  <h1>Data Anonymizer <small>(ICS 499 Team 13 &mdash; FP3)</small></h1>
+  <h1>Data Anonymizer <small>(ICS 499 Team 13)</small></h1>
   <div class="card">
     <p>Upload a CSV. PII columns are detected automatically; download replaces them with realistic synthetic values (consistent within the file).</p>
     <input type="file" id="file" accept=".csv">
@@ -33,6 +33,10 @@
   const anonBtn = document.getElementById('anonBtn');
   const statusEl = document.getElementById('status');
   const reportEl = document.getElementById('report');
+  let techniques = [];
+  let currentPlan = [];   // [{column, pii_type, technique}]
+
+  fetch('/api/health').then(r => r.json()).then(d => { techniques = d.techniques; });
 
   function formData() {
     const f = fileInput.files[0];
@@ -42,23 +46,36 @@
     return fd;
   }
 
+  function renderPlan() {
+    if (!currentPlan.length) { reportEl.innerHTML = '<p>No PII columns detected.</p>'; return; }
+    reportEl.innerHTML =
+      '<table><tr><th>Column</th><th>PII Type</th><th>Technique</th></tr>' +
+      currentPlan.map((d, i) =>
+        '<tr><td>' + d.column + '</td><td>' + d.pii_type + '</td><td>' +
+        '<select data-idx="' + i + '">' +
+        techniques.map(t => '<option value="' + t + '"' + (t === d.technique ? ' selected' : '') + '>' + t + '</option>').join('') +
+        '</select></td></tr>'
+      ).join('') + '</table>';
+    reportEl.querySelectorAll('select').forEach(sel => {
+      sel.onchange = () => { currentPlan[+sel.dataset.idx].technique = sel.value; };
+    });
+  }
+
   detectBtn.onclick = async () => {
     const fd = formData(); if (!fd) return;
     statusEl.textContent = 'Detecting...';
     const res = await fetch('/api/detect', { method: 'POST', body: fd });
     if (!res.ok) { statusEl.textContent = 'Error: ' + (await res.json()).detail; return; }
     const data = await res.json();
-    statusEl.textContent = data.row_count + ' rows, ' + data.detected.length + ' PII column(s) detected.';
-    reportEl.innerHTML = data.detected.length
-      ? '<table><tr><th>Column</th><th>PII Type</th><th>Technique</th></tr>' +
-        data.detected.map(d => '<tr><td>' + d.column + '</td><td>' + d.pii_type + '</td><td>' + d.technique + '</td></tr>').join('') +
-        '</table>'
-      : '<p>No PII columns detected.</p>';
+    currentPlan = data.detected;
+    statusEl.textContent = data.row_count + ' rows, ' + data.detected.length + ' PII column(s) detected. Adjust techniques per column if needed.';
+    renderPlan();
     anonBtn.disabled = data.detected.length === 0;
   };
 
   anonBtn.onclick = async () => {
     const fd = formData(); if (!fd) return;
+    if (currentPlan.length) fd.append('plan_json', JSON.stringify(currentPlan));
     statusEl.textContent = 'Anonymizing...';
     const res = await fetch('/api/anonymize', { method: 'POST', body: fd });
     if (!res.ok) { statusEl.textContent = 'Error: ' + (await res.json()).detail; return; }

@@ -4,13 +4,16 @@ ICS 499 Capstone — Team 13 (Chris Nhul, Sophie Tony-Uduhirinwa)
 
 Extends the Assignment 2 SQL anonymizer into a full application: upload a
 dataset, PII columns are auto-detected, and sensitive values are replaced
-using a selectable anonymization technique. One-way techniques now;
-reversible anonymization (encrypted key file) lands in FP6.
+using a selectable anonymization technique per column. One-way techniques
+now; reversible anonymization (encrypted key file) lands in FP6.
+
+**Live app:** https://data-anonymizer-g90k.onrender.com (free tier — hit
+`/api/health` first to wake it before a demo)
 
 ## Stack
 
-Python 3.11+ · FastAPI · Faker · pytest. Deployed on Render (free tier —
-hit `/api/health` to warm it up before a demo).
+Python 3.10+ · FastAPI · Faker · pytest. Deployed on Render, auto-deploy
+from `main`.
 
 ## Run locally
 
@@ -24,18 +27,23 @@ uvicorn app.main:app --reload    # then open http://127.0.0.1:8000
 
 Try it with `samples/customers.csv`.
 
+## Status
+
+| Area | Done | Next |
+|---|---|---|
+| Techniques | substitution, pseudonymization, nulling, partial masking, generalization | hashing, format-preserving masking, reversible mode |
+| Parsers | CSV, JSON; SQL core functions (table-level) | SQL multi-table assembly, TXT |
+| App | upload → detect → per-column technique selection → download | multi-table SQL support in API/UI |
+
 ## Layout
 
 ```
 app/        FastAPI app + static UI        (owner: Chris; UI lead: Sophie)
 engine/     detection, mapping, pipeline   (owner: Chris)
-engine/techniques/  pluggable techniques   (substitution done; masking,
-                                            generalization, nulling: Sophie)
-<<<<<<< HEAD
-parsers/    CSV ; JSON , SQL done, TXT next  (owner: Sophie)
-=======
-parsers/    CSV done; JSON done, SQL, TXT next  (owner: Sophie)
->>>>>>> ad9e247ed07d347aa196c23380fe8b94642d35f2
+engine/techniques/  pluggable techniques   (substitution, pseudonymization:
+                                            Chris; masking, generalization,
+                                            nulling: Sophie)
+parsers/    CSV, JSON done; SQL in progress, TXT next  (owner: Sophie)
 tests/      pytest suite                   (shared)
 samples/    demo datasets
 ```
@@ -48,16 +56,19 @@ samples/    demo datasets
   output across runs (HMAC-derived per-value seeds; no dictionary attacks).
 - Detection is column-name-first with a value-pattern fallback; 9 PII types:
   name, email, phone, address, dob, zip, ssn, ip, card.
+- When the user edits the detection plan, the edited plan is authoritative:
+  columns removed from it are left untouched.
 
-  ## Known limitations
+## Known limitations
 
 - The JSON parser reads its column headers from the first record in the
-  file. If a later record has a field the first record doesn't (for
-  example, the first customer has no `email` but a later one does), that
-  field is silently dropped rather than added as a new column. This is a
-  deliberate simplification for this project's scope, not a bug — a more
-  robust version would scan every record to build the full set of headers
-  before converting to rows.
+  file. If a later record has a field the first record doesn't, that field
+  is silently dropped rather than added as a new column. This is a
+  deliberate simplification for this project's scope — a more robust
+  version would scan every record to build the full header set first.
+- Generalization leaves street addresses unchanged (no reliable city/state
+  extraction from arbitrary address text); choose substitution, nulling, or
+  partial masking for address columns.
 
 ## Docs
 

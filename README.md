@@ -32,7 +32,7 @@ Try it with `samples/customers.csv`.
 | Area | Done | Next |
 |---|---|---|
 | Techniques | substitution, pseudonymization, nulling, partial masking, generalization | hashing, format-preserving masking, reversible mode |
-| Parsers | CSV, JSON; SQL core functions (table-level) | SQL multi-table assembly, TXT |
+| Parsers | CSV, JSON, SQL (multi-table parse/serialize), TXT (pattern-based PII) | SQL + web app integration (Chris) |
 | App | upload → detect → per-column technique selection → download | multi-table SQL support in API/UI |
 
 ## Layout
@@ -43,7 +43,7 @@ engine/     detection, mapping, pipeline   (owner: Chris)
 <<<<<<< HEAD
 engine/techniques/  pluggable techniques   (substitution done; masking,
                                             generalization, nulling: Sophie)
-parsers/    CSV, JSON, SQL done; TXT next  (owner: Sophie)
+parsers/    CSV, JSON, SQL, TXT done  (owner: Sophie)
 =======
 engine/techniques/  pluggable techniques   (substitution, pseudonymization:
                                             Chris; masking, generalization,

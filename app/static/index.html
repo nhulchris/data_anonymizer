@@ -5,8 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Data Anonymizer</title>
 <style>
-  /* Minimal FP3 UI -- Sophie owns the real UI going forward */
-  body { font-family: system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; color: #1a1a2e; }
+  body { font-family: system-ui, sans-serif; max-width: 760px; margin: 40px auto; padding: 0 16px; color: #1a1a2e; }
   h1 { font-size: 1.5rem; }
   .card { border: 1px solid #d0d0e0; border-radius: 8px; padding: 20px; margin: 16px 0; }
   button { background: #2f3c7e; color: #fff; border: 0; border-radius: 6px; padding: 10px 18px; font-size: 1rem; cursor: pointer; }
@@ -15,15 +14,17 @@
   th, td { border: 1px solid #d0d0e0; padding: 6px 10px; text-align: left; font-size: 0.9rem; }
   th { background: #f2f3fa; }
   #status { margin-top: 10px; font-size: 0.9rem; }
+  #textTech { margin-top: 10px; display: none; }
 </style>
 </head>
 <body>
   <h1>Data Anonymizer <small>(ICS 499 Team 13)</small></h1>
   <div class="card">
-    <p>Upload a CSV. PII columns are detected automatically; download replaces them with realistic synthetic values (consistent within the file).</p>
-    <input type="file" id="file" accept=".csv">
+    <p>Upload a CSV, JSON, SQL, or TXT file. PII is detected automatically; pick a technique per column (or one technique for free text) and download the anonymized result.</p>
+    <input type="file" id="file" accept=".csv,.json,.sql,.txt">
     <button id="detectBtn">Detect PII</button>
     <button id="anonBtn" disabled>Anonymize &amp; Download</button>
+    <div id="textTech">Technique for text: <select id="textTechSel"></select></div>
     <div id="status"></div>
     <div id="report"></div>
   </div>
@@ -33,29 +34,47 @@
   const anonBtn = document.getElementById('anonBtn');
   const statusEl = document.getElementById('status');
   const reportEl = document.getElementById('report');
+  const textTechDiv = document.getElementById('textTech');
+  const textTechSel = document.getElementById('textTechSel');
   let techniques = [];
-  let currentPlan = [];   // [{column, pii_type, technique}]
+  let currentPlan = [];   // [{table, column, pii_type, technique}]
+  let mode = 'tabular';
 
-  fetch('/api/health').then(r => r.json()).then(d => { techniques = d.techniques; });
+  fetch('/api/health').then(r => r.json()).then(d => {
+    techniques = d.techniques;
+    textTechSel.innerHTML = techniques.map(t => '<option>' + t + '</option>').join('');
+  });
 
   function formData() {
     const f = fileInput.files[0];
-    if (!f) { statusEl.textContent = 'Choose a CSV file first.'; return null; }
+    if (!f) { statusEl.textContent = 'Choose a file first.'; return null; }
     const fd = new FormData();
     fd.append('file', f);
     return fd;
   }
 
-  function renderPlan() {
-    if (!currentPlan.length) { reportEl.innerHTML = '<p>No PII columns detected.</p>'; return; }
-    reportEl.innerHTML =
-      '<table><tr><th>Column</th><th>PII Type</th><th>Technique</th></tr>' +
-      currentPlan.map((d, i) =>
-        '<tr><td>' + d.column + '</td><td>' + d.pii_type + '</td><td>' +
-        '<select data-idx="' + i + '">' +
-        techniques.map(t => '<option value="' + t + '"' + (t === d.technique ? ' selected' : '') + '>' + t + '</option>').join('') +
-        '</select></td></tr>'
-      ).join('') + '</table>';
+  function renderPlan(data) {
+    if (mode === 'text') {
+      textTechDiv.style.display = 'block';
+      const rows = Object.entries(data.matches_by_type || {});
+      reportEl.innerHTML = rows.length
+        ? '<table><tr><th>PII Type</th><th>Matches found</th></tr>' +
+          rows.map(([t, n]) => '<tr><td>' + t + '</td><td>' + n + '</td></tr>').join('') + '</table>'
+        : '<p>No pattern-detectable PII found.</p>';
+      return;
+    }
+    textTechDiv.style.display = 'none';
+    const hasTables = currentPlan.some(d => d.table);
+    reportEl.innerHTML = currentPlan.length
+      ? '<table><tr>' + (hasTables ? '<th>Table</th>' : '') + '<th>Column</th><th>PII Type</th><th>Technique</th></tr>' +
+        currentPlan.map((d, i) =>
+          '<tr>' + (hasTables ? '<td>' + d.table + '</td>' : '') +
+          '<td>' + d.column + '</td><td>' + d.pii_type + '</td><td>' +
+          '<select data-idx="' + i + '">' +
+          techniques.map(t => '<option value="' + t + '"' + (t === d.technique ? ' selected' : '') + '>' + t + '</option>').join('') +
+          '</select></td></tr>'
+        ).join('') + '</table>'
+      : '<p>No PII columns detected.</p>';
     reportEl.querySelectorAll('select').forEach(sel => {
       sel.onchange = () => { currentPlan[+sel.dataset.idx].technique = sel.value; };
     });
@@ -67,22 +86,32 @@
     const res = await fetch('/api/detect', { method: 'POST', body: fd });
     if (!res.ok) { statusEl.textContent = 'Error: ' + (await res.json()).detail; return; }
     const data = await res.json();
-    currentPlan = data.detected;
-    statusEl.textContent = data.row_count + ' rows, ' + data.detected.length + ' PII column(s) detected. Adjust techniques per column if needed.';
-    renderPlan();
-    anonBtn.disabled = data.detected.length === 0;
+    mode = data.mode;
+    currentPlan = data.detected || [];
+    statusEl.textContent = mode === 'text'
+      ? data.match_count + ' PII match(es) found in free text.'
+      : data.row_count + ' rows, ' + currentPlan.length + ' PII column(s) detected' +
+        (data.tables ? ' across ' + data.tables.length + ' table(s)' : '') + '. Adjust techniques if needed.';
+    renderPlan(data);
+    anonBtn.disabled = mode === 'text' ? data.match_count === 0 : currentPlan.length === 0;
   };
 
   anonBtn.onclick = async () => {
     const fd = formData(); if (!fd) return;
-    if (currentPlan.length) fd.append('plan_json', JSON.stringify(currentPlan));
+    if (mode === 'text') {
+      fd.append('technique', textTechSel.value || 'substitution');
+    } else if (currentPlan.length) {
+      fd.append('plan_json', JSON.stringify(currentPlan));
+    }
     statusEl.textContent = 'Anonymizing...';
     const res = await fetch('/api/anonymize', { method: 'POST', body: fd });
     if (!res.ok) { statusEl.textContent = 'Error: ' + (await res.json()).detail; return; }
     const blob = await res.blob();
+    const name = fileInput.files[0].name;
+    const dot = name.lastIndexOf('.');
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = (fileInput.files[0].name.replace(/\.csv$/i, '')) + '_anonymized.csv';
+    a.download = (dot > 0 ? name.slice(0, dot) : name) + '_anonymized' + (dot > 0 ? name.slice(dot) : '');
     a.click();
     statusEl.textContent = 'Done - anonymized file downloaded.';
   };

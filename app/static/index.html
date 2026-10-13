@@ -25,8 +25,21 @@
     <button id="detectBtn">Detect PII</button>
     <button id="anonBtn" disabled>Anonymize &amp; Download</button>
     <div id="textTech">Technique for text: <select id="textTechSel"></select></div>
+    <div style="margin-top:10px">
+      <label><input type="checkbox" id="revChk"> Reversible (download includes an encrypted key file)</label>
+      <span id="revFields" style="display:none"> &nbsp;Passphrase: <input type="password" id="passphrase"></span>
+    </div>
     <div id="status"></div>
     <div id="report"></div>
+  </div>
+
+  <div class="card">
+    <p><b>Restore</b> an anonymized file back to its originals (requires the key file and passphrase).</p>
+    <input type="file" id="restFile" accept=".csv,.json,.sql,.txt"> anonymized file<br>
+    <input type="file" id="restKey" accept=".key" style="margin-top:6px"> key file<br>
+    Passphrase: <input type="password" id="restPass" style="margin-top:6px">
+    <button id="restBtn" style="margin-left:8px">Restore &amp; Download</button>
+    <div id="restStatus"></div>
   </div>
 <script>
   const fileInput = document.getElementById('file');
@@ -96,6 +109,10 @@
     anonBtn.disabled = mode === 'text' ? data.match_count === 0 : currentPlan.length === 0;
   };
 
+  const revChk = document.getElementById('revChk');
+  const revFields = document.getElementById('revFields');
+  revChk.onchange = () => { revFields.style.display = revChk.checked ? 'inline' : 'none'; };
+
   anonBtn.onclick = async () => {
     const fd = formData(); if (!fd) return;
     if (mode === 'text') {
@@ -103,17 +120,48 @@
     } else if (currentPlan.length) {
       fd.append('plan_json', JSON.stringify(currentPlan));
     }
+    if (revChk.checked) {
+      const pw = document.getElementById('passphrase').value;
+      if (!pw) { statusEl.textContent = 'Enter a passphrase for reversible mode.'; return; }
+      fd.append('reversible', 'true');
+      fd.append('passphrase', pw);
+    }
     statusEl.textContent = 'Anonymizing...';
     const res = await fetch('/api/anonymize', { method: 'POST', body: fd });
     if (!res.ok) { statusEl.textContent = 'Error: ' + (await res.json()).detail; return; }
     const blob = await res.blob();
     const name = fileInput.files[0].name;
     const dot = name.lastIndexOf('.');
+    const base = (dot > 0 ? name.slice(0, dot) : name) + '_anonymized';
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = (dot > 0 ? name.slice(0, dot) : name) + '_anonymized' + (dot > 0 ? name.slice(dot) : '');
+    a.download = revChk.checked ? base + '.zip' : base + (dot > 0 ? name.slice(dot) : '');
     a.click();
-    statusEl.textContent = 'Done - anonymized file downloaded.';
+    statusEl.textContent = revChk.checked
+      ? 'Done - zip with anonymized file + key file downloaded. Keep the key file and passphrase safe.'
+      : 'Done - anonymized file downloaded.';
+  };
+
+  document.getElementById('restBtn').onclick = async () => {
+    const restStatus = document.getElementById('restStatus');
+    const f = document.getElementById('restFile').files[0];
+    const k = document.getElementById('restKey').files[0];
+    const pw = document.getElementById('restPass').value;
+    if (!f || !k || !pw) { restStatus.textContent = 'Need the anonymized file, the key file, and the passphrase.'; return; }
+    const fd = new FormData();
+    fd.append('file', f);
+    fd.append('key_file', k);
+    fd.append('passphrase', pw);
+    restStatus.textContent = 'Restoring...';
+    const res = await fetch('/api/restore', { method: 'POST', body: fd });
+    if (!res.ok) { restStatus.textContent = 'Error: ' + (await res.json()).detail; return; }
+    const blob = await res.blob();
+    const dot = f.name.lastIndexOf('.');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = (dot > 0 ? f.name.slice(0, dot) : f.name).replace('_anonymized', '') + '_restored' + (dot > 0 ? f.name.slice(dot) : '');
+    a.click();
+    restStatus.textContent = 'Done - restored file downloaded.';
   };
 </script>
 </body>

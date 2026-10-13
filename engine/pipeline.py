@@ -39,7 +39,7 @@ def run(
     store: MappingStore | None = None,
 ) -> Result:
     """Apply the plan to the rows. Blank values pass through unchanged."""
-    store = store or MappingStore()
+    store = store if store is not None else MappingStore()
     by_index = {
         headers.index(p.header): p for p in plan if p.header in headers
     }
@@ -70,7 +70,7 @@ def run_tables(
     consistency: the same value in two tables maps to the same fake.
     Returns (anonymized tables in the same shape, the plans used, the store).
     """
-    store = store or MappingStore()
+    store = store if store is not None else MappingStore()
     plans = plans or {}
     out_tables: list[dict] = []
     used_plans: dict[str, list[ColumnPlan]] = {}

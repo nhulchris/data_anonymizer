@@ -16,12 +16,14 @@ from __future__ import annotations
 
 import io
 import json
+import zipfile
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 
-from engine import pipeline
+from engine import keyfile, pipeline
+from engine.keyfile import REVERSIBLE_TECHNIQUES, KeyfileError
 from engine.mapping import MappingStore
 from engine.pipeline import ColumnPlan
 from engine.techniques import available_techniques
@@ -147,17 +149,47 @@ async def detect(file: UploadFile = File(...)):
     }
 
 
+def _reversible_response(out_text: str, out_name: str, store: MappingStore, passphrase: str):
+    """Bundle the anonymized file + encrypted key file into one zip."""
+    kf = keyfile.create_keyfile(store, passphrase)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr(out_name, out_text)
+        z.writestr(out_name.rsplit(".", 1)[0] + ".key", kf)
+    buf.seek(0)
+    zip_name = out_name.rsplit(".", 1)[0] + ".zip"
+    return StreamingResponse(
+        buf, media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{zip_name}"'},
+    )
+
+
+def _check_reversible(techniques_used: set[str]):
+    bad = techniques_used - REVERSIBLE_TECHNIQUES
+    if bad:
+        raise HTTPException(
+            422,
+            "Reversible mode supports only "
+            + ", ".join(sorted(REVERSIBLE_TECHNIQUES))
+            + f". Not reversible: {', '.join(sorted(bad))}",
+        )
+
+
 @app.post("/api/anonymize")
 async def anonymize(
     file: UploadFile = File(...),
     plan_json: str | None = Form(None),
     technique: str = Form("substitution"),   # used for .txt only
     seed: str = Form("team13-dev-seed"),
+    reversible: bool = Form(False),
+    passphrase: str = Form(""),
 ):
     ext, text = await _read_upload(file)
     valid = set(available_techniques())
     store = MappingStore(seed=seed)
     out_name = _out_name(file.filename, ext)
+    if reversible and not passphrase:
+        raise HTTPException(422, "Reversible mode requires a passphrase")
 
     if ext in (".csv", ".json"):
         headers, rows = _parse_tabular(ext, text)
@@ -170,10 +202,14 @@ async def anonymize(
             plan = pipeline.build_plan(headers, rows)
         if not plan:
             raise HTTPException(422, "No PII columns detected in this file")
+        if reversible:
+            _check_reversible({p.technique for p in plan})
         result = pipeline.run(headers, rows, plan, store)
-        if ext == ".csv":
-            return _stream(csv_parser.serialize(result.headers, result.rows), out_name, "text/csv")
-        return _stream(json_parser.serialize(result.headers, result.rows), out_name, "application/json")
+        out_text = (csv_parser.serialize(result.headers, result.rows) if ext == ".csv"
+                    else json_parser.serialize(result.headers, result.rows))
+        if reversible:
+            return _reversible_response(out_text, out_name, store, passphrase)
+        return _stream(out_text, out_name, "text/csv" if ext == ".csv" else "application/json")
 
     if ext == ".sql":
         tables = sql_parser.parse(text)
@@ -191,10 +227,54 @@ async def anonymize(
             # Tables the user's plan doesn't mention are left untouched
             for t in tables:
                 plans.setdefault(t["name"], [])
-        out_tables, _, _ = pipeline.run_tables(tables, store, plans or None)
-        return _stream(sql_parser.serialize(text, out_tables), out_name, "application/sql")
+        out_tables, used_plans, _ = pipeline.run_tables(tables, store, plans or None)
+        if reversible:
+            _check_reversible({p.technique for plan in used_plans.values() for p in plan})
+        out_text = sql_parser.serialize(text, out_tables)
+        if reversible:
+            return _reversible_response(out_text, out_name, store, passphrase)
+        return _stream(out_text, out_name, "application/sql")
 
     # .txt
     if technique not in valid:
         raise HTTPException(422, f"Unknown technique: {technique!r}")
-    return _stream(txt_parser.anonymize_text(text, store, technique), out_name, "text/plain")
+    if reversible:
+        _check_reversible({technique})
+    out_text = txt_parser.anonymize_text(text, store, technique)
+    if reversible:
+        return _reversible_response(out_text, out_name, store, passphrase)
+    return _stream(out_text, out_name, "text/plain")
+
+
+@app.post("/api/restore")
+async def restore(
+    file: UploadFile = File(...),
+    key_file: UploadFile = File(...),
+    passphrase: str = Form(...),
+):
+    """Restore an anonymized file to its originals using its key file."""
+    ext, text = await _read_upload(file)
+    key_data = await key_file.read()
+    try:
+        reverse = keyfile.load_reverse_map(key_data, passphrase)
+    except KeyfileError as e:
+        raise HTTPException(422, str(e))
+
+    base = _out_name(file.filename, ext).replace("_anonymized", "")
+    stem = base[: -len(ext)]
+    restored_name = f"{stem.replace('_anonymized', '')}_restored{ext}"
+
+    if ext in (".csv", ".json"):
+        headers, rows = _parse_tabular(ext, text)
+        rows = keyfile.restore_rows(rows, reverse)
+        out_text = (csv_parser.serialize(headers, rows) if ext == ".csv"
+                    else json_parser.serialize(headers, rows))
+        return _stream(out_text, restored_name, "text/csv" if ext == ".csv" else "application/json")
+
+    if ext == ".sql":
+        tables = sql_parser.parse(text)
+        for t in tables:
+            t["rows"] = keyfile.restore_rows(t["rows"], reverse)
+        return _stream(sql_parser.serialize(text, tables), restored_name, "application/sql")
+
+    return _stream(keyfile.restore_text(text, reverse), restored_name, "text/plain")

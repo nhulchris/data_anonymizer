@@ -139,3 +139,56 @@ class TestJsonApi:
 def test_rejects_unsupported_extension():
     r = _upload("/api/detect", "x.exe", "junk")
     assert r.status_code == 400
+
+
+class TestBase64Transport:
+    """The edge firewall blocks raw SQL-looking bodies; the UI sends files
+    base64-encoded instead. Both transports must behave identically."""
+
+    def test_detect_b64_sql(self):
+        import base64 as b64
+        r = client.post("/api/detect", data={
+            "filename": "company.sql",
+            "content_b64": b64.b64encode(COMPANY_SQL.encode()).decode(),
+        })
+        assert r.status_code == 200
+        assert r.json()["tables"] == ["customers", "orders"]
+
+    def test_anonymize_b64_matches_multipart(self):
+        import base64 as b64
+        r1 = _upload("/api/anonymize", "company.sql", COMPANY_SQL, {"seed": "same"})
+        r2 = client.post("/api/anonymize", data={
+            "filename": "company.sql",
+            "content_b64": b64.b64encode(COMPANY_SQL.encode()).decode(),
+            "seed": "same",
+        })
+        assert r2.status_code == 200
+        assert r1.text == r2.text
+
+    def test_restore_b64(self):
+        import base64 as b64
+        import zipfile as zf
+        r = client.post("/api/anonymize", data={
+            "filename": "company.sql",
+            "content_b64": b64.b64encode(COMPANY_SQL.encode()).decode(),
+            "reversible": "true", "passphrase": "pw",
+        })
+        z = zf.ZipFile(io.BytesIO(r.content))
+        anon = z.read("company_anonymized.sql")
+        key = z.read("company_anonymized.key")
+        r2 = client.post("/api/restore", data={
+            "filename": "company_anonymized.sql",
+            "content_b64": b64.b64encode(anon).decode(),
+            "key_b64": b64.b64encode(key).decode(),
+            "passphrase": "pw",
+        })
+        assert r2.status_code == 200
+        assert "John Smith" in r2.text
+
+    def test_bad_b64_rejected(self):
+        r = client.post("/api/detect", data={"filename": "x.csv", "content_b64": "!!!not-base64!!!"})
+        assert r.status_code == 400
+
+    def test_neither_transport_rejected(self):
+        r = client.post("/api/detect", data={})
+        assert r.status_code == 400

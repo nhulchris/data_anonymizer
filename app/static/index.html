@@ -1009,6 +1009,27 @@ if(f1el){
   const f1zone=f1el.closest('.dropzone');
   if(f1zone) f1zone.addEventListener('drop', detectCurrentFile);
 }
+// Catch the common mistake of uploading the reversible .zip itself to
+// Restore, instead of unzipping it and uploading the two files inside.
+function checkForZip(){
+  const f2=document.getElementById('f2').files[0];
+  const f3=document.getElementById('f3').files[0];
+  const statusEl=document.getElementById('restStatus');
+  const isZip=f=>f && f.name.toLowerCase().endsWith('.zip');
+  if(isZip(f2) || isZip(f3)){
+    statusEl.textContent='That looks like the .zip from reversible mode. Unzip it first, then upload the anonymized file and the .key file separately below.';
+  } else if(statusEl.textContent.startsWith('That looks like the .zip')){
+    statusEl.textContent='';
+  }
+}
+['f2','f3'].forEach(id=>{
+  const el=document.getElementById(id);
+  if(!el) return;
+  el.addEventListener('change', checkForZip);
+  const zone=el.closest('.dropzone');
+  if(zone) zone.addEventListener('drop', checkForZip);
+});
+
 (function(){
   let theme = 'light';
   try {

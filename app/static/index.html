@@ -474,6 +474,7 @@ button.primary:active,button.ghost:active{transform:scale(.97)}
         <input type="file" id="f1">
       </label>
       <p class="filetypes">.csv · .json · .sql · .txt</p>
+      <p class="sub" id="detectStatus" style="margin:10px 0 0"></p>
     </div>
 
     <div class="panel review-panel" id="reviewPanel">
@@ -495,6 +496,7 @@ button.primary:active,button.ghost:active{transform:scale(.97)}
       <div class="cols">
         <div class="cols-head"><div><h3>Detected columns</h3><span class="cols-hint">Choose a technique for each field</span></div><span class="count" id="columnCount">3 of 4 protected</span></div>
 
+        <div id="colsRows">
         <div class="col-row flagged" data-pii="true" data-kind="name">
           <input type="checkbox" checked aria-label="Protect name column" onchange="toggleRow(this)">
           <div class="col-name">name<span class="ptype"><span class="type-dot"></span>PERSONAL DATA</span></div>
@@ -528,6 +530,7 @@ button.primary:active,button.ghost:active{transform:scale(.97)}
           <select aria-label="Technique for loyalty level" disabled onchange="updateNote(this)"><option selected>Substitution</option><option>Pseudonymization</option><option>Partial masking</option><option>Generalization</option><option>Nulling</option><option>Hashing</option></select>
           <div class="technote"><span class="note-title">No personal data detected</span><span class="ex">Left as-is unless you choose to protect it</span></div>
         </div>
+        </div>
       </div>
       <div class="review-footnote"><span class="footnote-shield">✓</span><span><strong>You’re in control.</strong> Uncheck a field to leave it unchanged, or select a technique to see how its values will be handled.</span></div>
     </div>
@@ -535,6 +538,7 @@ button.primary:active,button.ghost:active{transform:scale(.97)}
     <div class="panel">
       <h2>Download</h2>
       <p class="sub">Choose whether you'll need to restore this data later.</p>
+      <p class="sub" id="anonStatus" style="margin:0 0 4px"></p>
 
       <div class="check-row">
         <input type="checkbox" id="rev" onchange="toggleRev(this)">
@@ -559,7 +563,7 @@ button.primary:active,button.ghost:active{transform:scale(.97)}
       </div>
 
       <div class="btnrow">
-        <button class="primary" onclick="handleAnonymize(event)">Anonymize &amp; Download</button>
+        <button class="primary" id="anonBtn" disabled onclick="handleAnonymize(event)">Anonymize &amp; Download</button>
       </div>
     </div>
   </div>
@@ -589,12 +593,13 @@ button.primary:active,button.ghost:active{transform:scale(.97)}
 
     <div class="panel">
       <h2>Passphrase</h2>
-      <div class="field"><label>Enter the passphrase shared with you</label><input type="password" placeholder="••••••••••"></div>
+      <div class="field"><label>Enter the passphrase shared with you</label><input type="password" id="restPassphrase" placeholder="••••••••••"></div>
       <div class="lock-note">
         <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4" y="10" width="16" height="9" rx="1.5" stroke="currentColor" stroke-width="1.5"/><path d="M7.5 10V7a4.5 4.5 0 0 1 9 0v3" stroke="currentColor" stroke-width="1.5"/></svg>
         <span>Both files and the exact passphrase are required. A wrong passphrase fails safely — it won't partially restore your data.</span>
       </div>
       <div class="btnrow"><button class="primary" onclick="handleRestore(event)">Restore &amp; Download</button></div>
+      <p class="sub" id="restStatus" style="margin:12px 0 0"></p>
     </div>
   </div>
 
@@ -796,18 +801,143 @@ function updateNote(sel){
 function toggleRev(cb){
   document.getElementById('revbox').style.display = cb.checked ? 'block' : 'none';
 }
-// --- TODO(Chris): wire these to the real API. Intentionally left as stubs ---
+// --- Real API wiring ---
+const TECH_LABELS={substitution:'Substitution',pseudonymization:'Pseudonymization',partial_masking:'Partial masking',generalization:'Generalization',nulling:'Nulling',hashing:'Hashing'};
+let API_TECHNIQUES=[];
+let detectMode='tabular';
+fetch('/api/health').then(r=>r.json()).then(d=>{ API_TECHNIQUES=d.techniques||[]; }).catch(()=>{});
+function toB64(file){
+  return new Promise((resolve,reject)=>{
+    const r=new FileReader();
+    r.onload=()=>resolve(r.result.split(',')[1]);
+    r.onerror=reject;
+    r.readAsDataURL(file);
+  });
+}
+function techOptionsHtml(selectedSlug){
+  const list=API_TECHNIQUES.length?API_TECHNIQUES:Object.keys(TECH_LABELS);
+  return list.map(slug=>`<option value="${slug}"${slug===selectedSlug?' selected':''}>${TECH_LABELS[slug]||slug}</option>`).join('');
+}
+function noteFor(slug,kind){
+  const label=TECH_LABELS[slug]||slug;
+  const d=techniqueDetails[label];
+  return d?{note:d.note,ex:(d.examples[kind]||d.examples.other)}:{note:'',ex:''};
+}
+function buildColRow(table,column,piiType,defaultSlug){
+  const kind=['name','email','ssn'].includes(piiType)?piiType:'other';
+  const {note,ex}=noteFor(defaultSlug,kind);
+  const label=table?`${table}.${column}`:column;
+  return `<div class="col-row flagged" data-pii="true" data-kind="${kind}" data-table="${table||''}" data-column="${column}" data-piitype="${piiType}">
+    <input type="checkbox" checked aria-label="Protect ${label}" onchange="toggleRow(this)">
+    <div class="col-name">${label}<span class="ptype"><span class="type-dot"></span>${String(piiType).toUpperCase()}</span></div>
+    <select aria-label="Technique for ${label}" onchange="updateNote(this)">${techOptionsHtml(defaultSlug)}</select>
+    <div class="technote"><span class="note-title">${note}</span><span class="ex">${ex}</span></div>
+  </div>`;
+}
+function renderColumns(data){
+  const wrap=document.getElementById('colsRows');
+  const rows=(data.detected||[]).map(d=>buildColRow(d.table,d.column,d.pii_type,d.technique));
+  wrap.innerHTML=rows.length?rows.join(''):'<p class="sub">No PII columns detected in this file.</p>';
+  document.querySelectorAll('#reviewPanel .col-row select').forEach(sel=>sel.addEventListener('change',()=>updateNote(sel)));
+  updateReviewSummary();
+}
+function renderTextMode(data){
+  const wrap=document.getElementById('colsRows');
+  const entries=Object.entries(data.matches_by_type||{});
+  const opts=techOptionsHtml('substitution');
+  const rowsHtml=entries.length
+    ? entries.map(([t,n])=>`<div class="col-row flagged"><div class="col-name">${t}<span class="ptype"><span class="type-dot"></span>${n} MATCH${n===1?'':'ES'}</span></div></div>`).join('')
+    : '<p class="sub">No pattern-detectable PII found.</p>';
+  wrap.innerHTML=`<div class="col-row"><div class="col-name">Technique for this file</div><select id="textTechSel" aria-label="Technique for text">${opts}</select><div></div></div>${rowsHtml}`;
+}
+function detectCurrentFile(){
+  const f=document.getElementById('f1').files[0];
+  if(!f) return;
+  const statusEl=document.getElementById('detectStatus');
+  statusEl.textContent='Detecting…';
+  document.getElementById('anonBtn').disabled=true;
+  toB64(f).then(b64=>{
+    const fd=new FormData();
+    fd.append('filename',f.name);
+    fd.append('content_b64',b64);
+    return fetch('/api/detect',{method:'POST',body:fd});
+  }).then(async res=>{
+    if(!res.ok){ const err=await res.json().catch(()=>({})); statusEl.textContent='Error: '+(err.detail||res.status); return; }
+    const data=await res.json();
+    detectMode=data.mode||'tabular';
+    if(detectMode==='text'){
+      renderTextMode(data);
+      statusEl.textContent=(data.match_count||0)+' PII match(es) found in free text.';
+      document.getElementById('anonBtn').disabled=(data.match_count||0)===0;
+    } else {
+      renderColumns(data);
+      statusEl.textContent=data.row_count+' rows, '+(data.detected||[]).length+' PII column(s) detected'+(data.tables?' across '+data.tables.length+' table(s)':'')+'. Adjust techniques if needed.';
+      document.getElementById('anonBtn').disabled=(data.detected||[]).length===0;
+    }
+  }).catch(()=>{ statusEl.textContent='Could not reach the server.'; });
+}
 function handleAnonymize(e){
   if(e) e.preventDefault();
-  // TODO(Chris): POST the chosen file + the review-panel plan (+ reversible flag)
-  // to /api/anonymize, then trigger a download from the response.
-  console.log('[Anonymize & Download] clicked — not yet wired to the API.');
+  const f=document.getElementById('f1').files[0];
+  const statusEl=document.getElementById('anonStatus');
+  if(!f){ statusEl.textContent='Choose a file first.'; return; }
+  const rev=document.getElementById('rev').checked;
+  const pass=document.getElementById('anonPassphrase').value;
+  if(rev && !pass){ statusEl.textContent='Enter a passphrase for reversible mode.'; return; }
+  statusEl.textContent='Anonymizing…';
+  toB64(f).then(b64=>{
+    const fd=new FormData();
+    fd.append('filename',f.name);
+    fd.append('content_b64',b64);
+    if(detectMode==='text'){
+      const sel=document.getElementById('textTechSel');
+      fd.append('technique', sel?sel.value:'substitution');
+    } else {
+      const plan=[...document.querySelectorAll('#colsRows .col-row')]
+        .filter(row=>row.querySelector('input[type=checkbox]') && row.querySelector('input[type=checkbox]').checked)
+        .map(row=>({table:row.dataset.table||undefined,column:row.dataset.column,pii_type:row.dataset.piitype,technique:row.querySelector('select').value}));
+      fd.append('plan_json', JSON.stringify(plan));
+    }
+    if(rev){ fd.append('reversible','true'); fd.append('passphrase',pass); }
+    return fetch('/api/anonymize',{method:'POST',body:fd});
+  }).then(async res=>{
+    if(!res.ok){ const err=await res.json().catch(()=>({})); statusEl.textContent='Error: '+(err.detail||res.status); return; }
+    const blob=await res.blob();
+    const dot=f.name.lastIndexOf('.');
+    const base=(dot>0?f.name.slice(0,dot):f.name)+'_anonymized';
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download= rev ? base+'.zip' : base+(dot>0?f.name.slice(dot):'');
+    a.click();
+    statusEl.textContent = rev ? 'Done — zip with anonymized file + key file downloaded. Keep the key file and passphrase safe.' : 'Done — anonymized file downloaded.';
+    addHistoryEntry(f.name, (dot>0?f.name.slice(dot+1):'file').toUpperCase(), rev);
+  }).catch(()=>{ statusEl.textContent='Could not reach the server.'; });
 }
 function handleRestore(e){
   if(e) e.preventDefault();
-  // TODO(Chris): POST the anonymized file + key file + passphrase to the
-  // restore endpoint, then trigger a download from the response.
-  console.log('[Restore & Download] clicked — not yet wired to the API.');
+  const f=document.getElementById('f2').files[0];
+  const k=document.getElementById('f3').files[0];
+  const pass=document.getElementById('restPassphrase').value;
+  const statusEl=document.getElementById('restStatus');
+  if(!f||!k||!pass){ statusEl.textContent='Need the anonymized file, the key file, and the passphrase.'; return; }
+  statusEl.textContent='Restoring…';
+  Promise.all([toB64(f),toB64(k)]).then(([fb64,kb64])=>{
+    const fd=new FormData();
+    fd.append('filename',f.name);
+    fd.append('content_b64',fb64);
+    fd.append('key_b64',kb64);
+    fd.append('passphrase',pass);
+    return fetch('/api/restore',{method:'POST',body:fd});
+  }).then(async res=>{
+    if(!res.ok){ const err=await res.json().catch(()=>({})); statusEl.textContent='Error: '+(err.detail||res.status); return; }
+    const blob=await res.blob();
+    const dot=f.name.lastIndexOf('.');
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download=(dot>0?f.name.slice(0,dot):f.name).replace('_anonymized','')+'_restored'+(dot>0?f.name.slice(dot):'');
+    a.click();
+    statusEl.textContent='Done — restored file downloaded.';
+  }).catch(()=>{ statusEl.textContent='Could not reach the server.'; });
 }
 function applyTheme(theme){
   const root = document.documentElement;
@@ -855,6 +985,12 @@ document.querySelectorAll('input[type="file"]').forEach(input => {
     });
   }
 });
+const f1el=document.getElementById('f1');
+if(f1el){
+  f1el.addEventListener('change', detectCurrentFile);
+  const f1zone=f1el.closest('.dropzone');
+  if(f1zone) f1zone.addEventListener('drop', detectCurrentFile);
+}
 (function(){
   let theme = 'light';
   try {

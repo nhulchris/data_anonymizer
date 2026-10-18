@@ -1,9 +1,9 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Data Anonymizer — Prototype</title>
+<title>Data Anonymizer</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -434,6 +434,14 @@ button.primary:active,button.ghost:active{transform:scale(.97)}
 .dropzone.just-picked{animation:pickPulse .5s ease}
 @keyframes pickPulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--brass) 35%,transparent)}100%{box-shadow:0 0 0 10px transparent}}
 @media(prefers-reduced-motion:reduce){.panel{opacity:1!important;transform:none!important;transition:none!important}.view{transition:none}.view.fade-out{opacity:1;transform:none}button.primary:active,button.ghost:active{transform:none}}
+#reviewPanel.text-mode .review-summary{display:none}
+#reviewPanel.text-mode .cols-head .count{display:none}
+.text-row{display:flex;align-items:center;justify-content:space-between;padding:11px 2px;border-bottom:1px solid var(--hairline);font-family:Inter,sans-serif;font-size:12.5px}
+.text-row:last-child{border-bottom:none}
+.text-row .ptype-inline{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:10.5px;letter-spacing:.4px;font-weight:700}
+.text-tech-row{padding:2px 2px 16px;border-bottom:1px solid var(--hairline);margin-bottom:4px}
+.text-tech-row label{display:block;font-size:12.5px;font-weight:600;margin-bottom:8px}
+.text-tech-row select{width:100%;margin-bottom:10px}
 
 </style>
 </head>
@@ -843,12 +851,19 @@ function renderColumns(data){
 }
 function renderTextMode(data){
   const wrap=document.getElementById('colsRows');
+  document.getElementById('reviewPanel').classList.add('text-mode');
   const entries=Object.entries(data.matches_by_type||{});
   const opts=techOptionsHtml('substitution');
-  const rowsHtml=entries.length
-    ? entries.map(([t,n])=>`<div class="col-row flagged"><div class="col-name">${t}<span class="ptype"><span class="type-dot"></span>${n} MATCH${n===1?'':'ES'}</span></div></div>`).join('')
+  const {note,ex}=noteFor('substitution','other');
+  const matchRows=entries.length
+    ? entries.map(([t,n])=>`<div class="text-row"><span>${t}</span><span class="ptype-inline"><span class="type-dot"></span>${n} MATCH${n===1?'':'ES'}</span></div>`).join('')
     : '<p class="sub">No pattern-detectable PII found.</p>';
-  wrap.innerHTML=`<div class="col-row"><div class="col-name">Technique for this file</div><select id="textTechSel" aria-label="Technique for text">${opts}</select><div></div></div>${rowsHtml}`;
+  wrap.innerHTML = `<div class="text-tech-row"><label for="textTechSel">Technique for this file (applies to every match below)</label><select id="textTechSel" onchange="updateTextNote(this)">${opts}</select><div class="technote"><span class="note-title" id="textNoteTitle">${note}</span><span class="ex" id="textNoteEx">${ex}</span></div></div>${matchRows}`;
+}
+function updateTextNote(sel){
+  const {note,ex}=noteFor(sel.value,'other');
+  document.getElementById('textNoteTitle').textContent=note;
+  document.getElementById('textNoteEx').textContent=ex;
 }
 function detectCurrentFile(){
   const f=document.getElementById('f1').files[0];
@@ -869,7 +884,10 @@ function detectCurrentFile(){
       renderTextMode(data);
       statusEl.textContent=(data.match_count||0)+' PII match(es) found in free text.';
       document.getElementById('anonBtn').disabled=(data.match_count||0)===0;
+      const rs=document.querySelector('#reviewStatus span:last-child');
+      if(rs) rs.textContent=(data.match_count||0)+' match'+(data.match_count===1?'':'es')+' found';
     } else {
+      document.getElementById('reviewPanel').classList.remove('text-mode');
       renderColumns(data);
       statusEl.textContent=data.row_count+' rows, '+(data.detected||[]).length+' PII column(s) detected'+(data.tables?' across '+data.tables.length+' table(s)':'')+'. Adjust techniques if needed.';
       document.getElementById('anonBtn').disabled=(data.detected||[]).length===0;

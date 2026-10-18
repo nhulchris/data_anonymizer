@@ -2,6 +2,7 @@
 
 ICS 499 Capstone — Team 13 Data Anonymizer
 
+
 This document covers the anonymization techniques, file parsers, and testing
 built for this project: three anonymization techniques (partial masking,
 generalization, nulling) and four file parsers (CSV, JSON, SQL, TXT).
@@ -192,7 +193,85 @@ memory) to contain the replacement values.
 
 ---
 
-## 5. Known Limitations Summary
+## 5. UI Integration and End-to-End Testing
+
+Beyond unit tests on individual functions, the full application was tested
+by hand through the actual website, upload through download, against the
+real FastAPI backend (`/api/detect`, `/api/anonymize`, `/api/restore`).
+
+### UI work
+
+The upload/review/download interface was redesigned for clarity: a
+per-column technique picker with a live plain-language description and
+example (e.g. "Hides part of the value — j.smith@gmail.com →
+j*****@gmail.com"), a Technique Guide page explaining all six supported
+techniques, a Restore page for reversing an anonymized file given its key
+file and passphrase, and a local (browser-only) History log of files
+processed in the current session.
+
+The interface's JavaScript was wired directly to the real backend
+contract: files are sent as base64 inside a form field rather than a
+normal multipart upload, a detail that turned out to matter, see the
+403 finding below.
+
+### End-to-end results, by format
+
+All four supported formats were tested through the live interface, for
+both one-way and reversible anonymization:
+
+| Format | Detect → Anonymize → Download | Reversible → Restore |
+|---|---|---|
+| CSV | Working | Working |
+| JSON | Working | Working |
+| SQL | Working (multi-table, grouped by table in the UI) | Working |
+| TXT | Working (pattern-detectable PII only) | Working |
+
+### Bugs found and fixed during integration testing
+
+1. **403 Forbidden on `.sql` uploads.** The hosting platform's edge
+   firewall blocked raw request bodies that pattern-matched SQL syntax —
+   which a legitimate `.sql` file upload naturally does. Fixed by sending
+   file content as base64 inside a form field instead of a raw multipart
+   file, which keeps the payload opaque to the pattern matcher.
+2. **TXT-mode layout bug.** The free-text review UI reused the same
+   4-column grid built for tabular columns (checkbox + name + technique +
+   example), but text-mode rows have no checkbox. Without one, the row's
+   label text was forced into a ~22px-wide column meant for a checkbox,
+   causing it to wrap one letter at a time. Fixed by giving text mode its
+   own, simpler row layout instead of reusing the tabular one.
+3. **Stale summary stats in TXT mode.** The "N of N protected" header and
+   coverage bar are tabular-only concepts (they count columns), but they
+   weren't being cleared when a `.txt` file was loaded, so they displayed
+   leftover numbers from whatever was shown previously. Fixed by hiding
+   that summary entirely in text mode and showing a plain match count
+   instead.
+
+### Correct rejections confirmed during testing (not bugs)
+
+Two cases were initially mistaken for bugs but turned out to be the
+backend correctly validating input:
+
+- **Uploading the reversible `.zip` directly to Restore.** Reversible mode
+  downloads a `.zip` containing two separate files (the anonymized data
+  and an encrypted `.key` file); Restore expects those two files
+  uploaded separately, not the zip itself. The server correctly returns
+  400 for a `.zip` upload.
+- **Reversible mode with an incompatible technique.** Only Substitution,
+  Pseudonymization, and Hashing can be reversed; Generalization and
+  Partial Masking intentionally discard information and cannot be undone.
+  Selecting one of those while Reversible is checked correctly returns a
+  422 with a specific, readable error naming exactly which technique
+  isn't reversible.
+
+Both are documented here as confirmed-correct behavior, and are worth
+keeping in mind for the UI: a clearer in-page explanation (e.g. detecting
+a `.zip` selected for Restore and prompting the user to unzip it first)
+would reduce this confusion for a first-time user, and is a reasonable
+follow-up improvement rather than a defect.
+
+---
+
+## 6. Known Limitations Summary
 
 - **JSON:** headers are taken from the first record only; a field missing
   from record 1 but present later is dropped.
@@ -202,3 +281,9 @@ memory) to contain the replacement values.
   free text are not detected (would require NLP; stretch goal).
 - **Generalization:** not implemented for addresses (no reliable
   city/state extraction from free-form text).
+- **Column override:** `/api/detect` only reports columns it flags as
+  PII; it does not return the full column list. This means a user
+  currently cannot manually flag a column the detector missed, since the
+  interface has nothing to offer them to select. Supporting this would
+  require a backend change to return all columns, not only the detected
+  ones.

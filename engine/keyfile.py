@@ -28,7 +28,7 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from engine.mapping import MappingStore
 
 MAGIC = b"DAKF1"
-REVERSIBLE_TECHNIQUES = {"substitution", "pseudonymization", "hashing"}
+REVERSIBLE_TECHNIQUES = {"substitution", "pseudonymization", "hashing", "format_preserving"}
 _ITERATIONS = 480_000
 
 

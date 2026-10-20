@@ -43,14 +43,28 @@ def run(
     by_index = {
         headers.index(p.header): p for p in plan if p.header in headers
     }
+    cell_plans = {i: p for i, p in by_index.items() if not get_technique(p.technique).column_level}
+    column_plans = {i: p for i, p in by_index.items() if get_technique(p.technique).column_level}
+
     out_rows: list[list[str]] = []
     for row in rows:
         new_row = list(row)
-        for idx, p in by_index.items():
+        for idx, p in cell_plans.items():
             if idx < len(new_row) and new_row[idx] and new_row[idx].strip():
                 technique = get_technique(p.technique)
                 new_row[idx] = technique.anonymize(p.pii_type, new_row[idx], store)
         out_rows.append(new_row)
+
+    # Column-level techniques (shuffling, synthetic) run after the cell pass,
+    # over the whole column at once.
+    for idx, p in column_plans.items():
+        technique = get_technique(p.technique)
+        column = [row[idx] if idx < len(row) else "" for row in out_rows]
+        new_column = technique.anonymize_column(p.pii_type, column, store)
+        for r, row in enumerate(out_rows):
+            if idx < len(row):
+                row[idx] = new_column[r]
+
     return Result(headers=headers, rows=out_rows, plan=plan, values_mapped=len(store))
 
 

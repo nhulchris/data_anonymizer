@@ -287,3 +287,34 @@ follow-up improvement rather than a defect.
   interface has nothing to offer them to select. Supporting this would
   require a backend change to return all columns, not only the detected
   ones.
+## Technique Scope: Why These Ten (added FP6, Chris)
+
+The course reference lists 14+ anonymization techniques. We implement ten,
+chosen so every distinct mechanism is represented: realistic replacement
+(substitution), opaque identifiers (pseudonymization), one-way hashing,
+suppression (nulling), partial masking, precision reduction (generalization),
+format-preserving masking, record reordering (shuffling), statistical noise
+(perturbation), and fully artificial generation (synthetic).
+
+The four we deliberately excluded, and why:
+
+- Static data masking: the category our tool implements, not a separate
+  technique -- every one-way technique we ship is static masking.
+- Dynamic data masking: masks at query time against a live production
+  database. Our tool is a file-processing pipeline by design; there is no
+  query layer to mask. Architectural mismatch, not a missing feature.
+- Tokenization: requires a secure token-vault service. Our pseudonymization
+  provides the same consistent-identifier property without vault
+  infrastructure, and the encrypted key file covers tokenization's
+  recover-the-original use case.
+- Encryption as a field transform: encrypting a field makes data useless for
+  the testing/analytics purposes anonymization serves. Where encryption
+  belongs in our design, we use it -- protecting the reversal mapping
+  (PBKDF2 + Fernet).
+
+Reversibility boundary: substitution, pseudonymization, hashing, and
+format-preserving masking are store-backed and reversible via the key file.
+Nulling, masking, and generalization destroy information; shuffling breaks
+the row-value link; perturbation and synthetic replace values without a
+recoverable mapping. Those six are one-way, and the UI/API enforce that
+boundary in reversible mode.

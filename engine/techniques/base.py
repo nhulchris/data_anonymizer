@@ -22,10 +22,17 @@ class Technique(ABC):
     name: str = ""
     #: True if originals can be recovered from a key file (set by reversible wrappers)
     reversible: bool = False
+    #: True if the technique operates on a whole column (anonymize_column)
+    #: instead of one value at a time (anonymize)
+    column_level: bool = False
 
     @abstractmethod
     def anonymize(self, pii_type: str, value: str, store: MappingStore) -> str:
         ...
+
+    def anonymize_column(self, pii_type: str, values: list[str], store: MappingStore) -> list[str]:
+        """Column-level transform; only used when column_level is True."""
+        raise NotImplementedError(f"{self.name} is not a column-level technique")
 
 
 _REGISTRY: dict[str, Technique] = {}
@@ -44,3 +51,10 @@ def get_technique(name: str) -> Technique:
 
 def available_techniques() -> list[str]:
     return sorted(_REGISTRY)
+
+
+# -- Column-level techniques ------------------------------------------------
+# Most techniques transform one value at a time (anonymize). Some, like
+# shuffling and synthetic generation, only make sense over a whole column.
+# Those set column_level = True and implement anonymize_column instead; the
+# pipeline dispatches accordingly.

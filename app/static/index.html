@@ -508,7 +508,7 @@ button.primary:active,button.ghost:active{transform:scale(.97)}
         <div class="col-row flagged" data-pii="true" data-kind="name">
           <input type="checkbox" checked aria-label="Protect name column" onchange="toggleRow(this)">
           <div class="col-name">name<span class="ptype"><span class="type-dot"></span>PERSONAL DATA</span></div>
-          <select aria-label="Technique for name" onchange="updateNote(this)">
+          <select id="demoSelName" aria-label="Technique for name" onchange="updateNote(this)">
             <option selected>Substitution</option><option>Pseudonymization</option><option>Partial masking</option><option>Generalization</option><option>Nulling</option><option>Hashing</option>
           </select>
           <div class="technote"><span class="note-title">Realistic replacement</span><span class="ex">Daniel Carter → Brittney Cameron</span></div>
@@ -517,7 +517,7 @@ button.primary:active,button.ghost:active{transform:scale(.97)}
         <div class="col-row flagged" data-pii="true" data-kind="email">
           <input type="checkbox" checked aria-label="Protect email column" onchange="toggleRow(this)">
           <div class="col-name">email<span class="ptype"><span class="type-dot"></span>EMAIL ADDRESS</span></div>
-          <select aria-label="Technique for email" onchange="updateNote(this)">
+          <select id="demoSelEmail" aria-label="Technique for email" onchange="updateNote(this)">
             <option>Substitution</option><option>Pseudonymization</option><option selected>Partial masking</option><option>Generalization</option><option>Nulling</option><option>Hashing</option>
           </select>
           <div class="technote"><span class="note-title">Keeps the format readable</span><span class="ex">j.smith@gmail.com → j*****@gmail.com</span></div>
@@ -526,7 +526,7 @@ button.primary:active,button.ghost:active{transform:scale(.97)}
         <div class="col-row flagged" data-pii="true" data-kind="ssn">
           <input type="checkbox" checked aria-label="Protect SSN column" onchange="toggleRow(this)">
           <div class="col-name">ssn<span class="ptype"><span class="type-dot"></span>SOCIAL SECURITY #</span></div>
-          <select aria-label="Technique for SSN" onchange="updateNote(this)">
+          <select id="demoSelSsn" aria-label="Technique for SSN" onchange="updateNote(this)">
             <option>Substitution</option><option>Pseudonymization</option><option>Partial masking</option><option>Generalization</option><option selected>Nulling</option><option>Hashing</option>
           </select>
           <div class="technote"><span class="note-title">Removes the sensitive value</span><span class="ex">123-45-6789 → (blank)</span></div>
@@ -535,7 +535,7 @@ button.primary:active,button.ghost:active{transform:scale(.97)}
         <div class="col-row unflagged off" data-pii="false" data-kind="other">
           <input type="checkbox" aria-label="Protect loyalty level column" onchange="toggleRow(this)">
           <div class="col-name">loyalty_level<span class="ptype"><span class="type-dot neutral"></span>NOT FLAGGED</span></div>
-          <select aria-label="Technique for loyalty level" disabled onchange="updateNote(this)"><option selected>Substitution</option><option>Pseudonymization</option><option>Partial masking</option><option>Generalization</option><option>Nulling</option><option>Hashing</option></select>
+          <select id="demoSelLoyalty" aria-label="Technique for loyalty level" disabled onchange="updateNote(this)"><option selected>Substitution</option></select>
           <div class="technote"><span class="note-title">No personal data detected</span><span class="ex">Left as-is unless you choose to protect it</span></div>
         </div>
         </div>
@@ -622,6 +622,10 @@ button.primary:active,button.ghost:active{transform:scale(.97)}
       <div class="techcard"><h3>Generalization</h3><p>Reduces precision while keeping the value useful.</p><p class="ex">1990-05-15 → 1990</p></div>
       <div class="techcard"><h3>Nulling</h3><p>Removes the value entirely.</p><p class="ex">123-45-6789 → (blank)</p></div>
       <div class="techcard"><h3>Hashing</h3><p>Converts the value into a scrambled, fixed-length code using a one-way function — the original can't be recovered from it, but the same input always produces the same hash.</p><p class="ex">daniel.carter@example.com → 9f86d08188...</p></div>
+      <div class="techcard"><h3>Format-preserving</h3><p>Replaces the value with a realistic fake one that keeps the exact same shape — useful when other systems or validation rules expect a specific format.</p><p class="ex">4111111111111111 → 4927123498761112</p></div>
+      <div class="techcard"><h3>Perturbation</h3><p>Adds small random noise to a numeric value, keeping it close to the original so statistics and trends still hold, without exposing the exact figure.</p><p class="ex">Age 37 → 38</p></div>
+      <div class="techcard"><h3>Shuffling</h3><p>Mixes a column's real values across different rows, so the values themselves stay genuine but are no longer linked to the person they originally belonged to.</p><p class="ex">City values reassigned between customer records</p></div>
+      <div class="techcard"><h3>Synthetic</h3><p>Generates an entirely new, fully artificial record that isn't derived from the original data at all.</p><p class="ex">Name: Emma Williams, Email: emma.williams@test.com, City: Denver</p></div>
     </div>
   </div>
 
@@ -638,7 +642,7 @@ button.primary:active,button.ghost:active{transform:scale(.97)}
     <p class="page-sub">No account or password required — these preferences are saved to this browser only.</p>
     <div class="panel">
       <div class="setrow"><div><div class="lbl">Dark mode</div><div class="desc">Follows your system setting by default</div></div><button class="toggle" id="darkToggle" onclick="toggleTheme(this)"></button></div>
-      <div class="setrow"><div><div class="lbl">Default technique</div><div class="desc">Used when a column doesn't have one set</div></div><select style="width:160px"><option selected>Substitution</option><option>Pseudonymization</option><option>Partial masking</option><option>Generalization</option><option>Nulling</option><option>Hashing</option></select></div>
+      <div class="setrow"><div><div class="lbl">Default technique</div><div class="desc">Used when a column doesn't have one set</div></div><select style="width:160px" id="defaultTechSel"><option selected>Substitution</option></select></div>
       <div class="setrow"><div><div class="lbl">Clear local history</div><div class="desc">Removes the session log shown on the History page</div></div><button class="ghost" onclick="clearHistory()">Clear</button></div>
     </div>
     <div class="panel">
@@ -810,10 +814,10 @@ function toggleRev(cb){
   document.getElementById('revbox').style.display = cb.checked ? 'block' : 'none';
 }
 // --- Real API wiring ---
-const TECH_LABELS={substitution:'Substitution',pseudonymization:'Pseudonymization',partial_masking:'Partial masking',generalization:'Generalization',nulling:'Nulling',hashing:'Hashing'};
+const TECH_LABELS={substitution:'Substitution',pseudonymization:'Pseudonymization',partial_masking:'Partial masking',generalization:'Generalization',nulling:'Nulling',hashing:'Hashing',format_preserving:'Format-preserving',perturbation:'Perturbation',shuffling:'Shuffling',synthetic:'Synthetic'};
 let API_TECHNIQUES=[];
 let detectMode='tabular';
-fetch('/api/health').then(r=>r.json()).then(d=>{ API_TECHNIQUES=d.techniques||[]; }).catch(()=>{});
+const healthReady=fetch('/api/health').then(r=>r.json()).then(d=>{ API_TECHNIQUES=d.techniques||[]; }).catch(()=>{});
 function toB64(file){
   return new Promise((resolve,reject)=>{
     const r=new FileReader();
@@ -826,6 +830,15 @@ function techOptionsHtml(selectedSlug){
   const list=API_TECHNIQUES.length?API_TECHNIQUES:Object.keys(TECH_LABELS);
   return list.map(slug=>`<option value="${slug}"${slug===selectedSlug?' selected':''}>${TECH_LABELS[slug]||slug}</option>`).join('');
 }
+healthReady.then(()=>{
+  const sel=document.getElementById('defaultTechSel');
+  if(sel) sel.innerHTML=techOptionsHtml('substitution');
+  const demoSlugs={demoSelName:'substitution',demoSelEmail:'partial_masking',demoSelSsn:'nulling',demoSelLoyalty:'substitution'};
+  Object.keys(demoSlugs).forEach(id=>{
+    const s=document.getElementById(id);
+    if(s) s.innerHTML=techOptionsHtml(demoSlugs[id]);
+  });
+});
 function noteFor(slug,kind){
   const label=TECH_LABELS[slug]||slug;
   const d=techniqueDetails[label];
@@ -871,7 +884,7 @@ function detectCurrentFile(){
   const statusEl=document.getElementById('detectStatus');
   statusEl.textContent='Detecting…';
   document.getElementById('anonBtn').disabled=true;
-  toB64(f).then(b64=>{
+  healthReady.then(()=>toB64(f)).then(b64=>{
     const fd=new FormData();
     fd.append('filename',f.name);
     fd.append('content_b64',b64);
@@ -1029,7 +1042,6 @@ function checkForZip(){
   const zone=el.closest('.dropzone');
   if(zone) zone.addEventListener('drop', checkForZip);
 });
-
 (function(){
   let theme = 'light';
   try {

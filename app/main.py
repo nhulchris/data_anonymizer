@@ -60,10 +60,15 @@ async def _read_upload(
     """
     if file is not None and file.filename:
         name, raw = file.filename, await file.read()
-    elif filename and content_b64 is not None:
-        name, raw = filename, _decode_b64(content_b64)
+    elif filename:
+        # content_b64 may arrive as None for an empty file: browsers encode
+        # zero bytes as an empty string, and FastAPI coerces empty optional
+        # form fields to None. Treat it as empty content, not a missing field.
+        name, raw = filename, _decode_b64(content_b64 or "")
     else:
         raise HTTPException(400, "Provide a file upload, or filename + content_b64")
+    if not raw:
+        raise HTTPException(400, "The uploaded file is empty")
     ext = next((e for e in SUPPORTED if name.lower().endswith(e)), None)
     if ext is None:
         raise HTTPException(400, f"Unsupported file type. Supported: {', '.join(SUPPORTED)}")

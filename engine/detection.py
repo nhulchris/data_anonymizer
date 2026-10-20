@@ -40,19 +40,33 @@ VALUE_PATTERNS: dict[str, re.Pattern] = {
 }
 
 
+# Headers whose first token is one of these are about THINGS, not people:
+# product_name, item_name, file_name, host_name, brand_name are not PII.
+NON_PERSON_PREFIXES = {"product", "item", "file", "host", "brand", "table", "column", "db", "server"}
+
+
 def _normalize(header: str) -> str:
     return re.sub(r"[^a-z0-9]", "", header.lower())
+
+
+def _tokens(header: str) -> list[str]:
+    return [t for t in re.split(r"[^a-z0-9]+", header.lower()) if t]
 
 
 def detect_column(header: str, sample_values: list[str] | None = None) -> str | None:
     """Return the detected PII type for a column, or None.
 
     Column-name match wins; otherwise, if >=60% of non-empty sample values
-    match a single value pattern, that type is returned.
+    match a single value pattern, that type is returned. Detection is a
+    heuristic: the UI lets the user override or drop any detected column.
     """
     norm = _normalize(header)
+    tokens = _tokens(header)
+    suppressed_name = bool(tokens) and tokens[0] in NON_PERSON_PREFIXES
     best: tuple[int, str] | None = None
     for pii_type, keywords in COLUMN_KEYWORDS.items():
+        if pii_type == "name" and suppressed_name:
+            continue
         for kw in keywords:
             if kw == norm or norm.endswith(kw) or norm.startswith(kw):
                 if best is None or len(kw) > best[0]:

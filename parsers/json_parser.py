@@ -11,7 +11,13 @@ import json
 
 def parse(text: str) -> tuple[list[str], list[list[str]]]:
     """Parse JSON text into (headers, rows)."""
-    data = json.loads(text)
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            f"File is not valid JSON (error near line {e.lineno}): "
+            "check for missing commas, quotes, or brackets"
+        )
 
     if not isinstance(data, list) or not data:
         raise ValueError("JSON file must contain a non-empty array of objects")

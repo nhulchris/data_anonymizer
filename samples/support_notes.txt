@@ -1,0 +1,22 @@
+SUPPORT TICKET LOG - SYNTHETIC SAMPLE DATA
+All names, numbers, and addresses below are fictional and generated for testing.
+
+Ticket #4401
+Customer Daniel Carter (daniel.carter@example.com) called from 612-555-1101
+about a duplicate charge on his card 4111 1111 1111 1111. He verified his
+identity with the last four of his SSN, 123-45-6789. The request came from
+IP address 192.168.1.25 and was escalated to billing.
+
+Ticket #4402
+Priya Nair wrote in from priya.nair@example.com asking to update her phone
+number to 651-555-2202. Her old card 5500-0000-0000-0004 should be removed.
+Login attempts were seen from 10.0.0.42 earlier that day.
+
+Ticket #4403
+Robert O'Connor (robert.oconnor@example.com, 651-555-7707) reported a
+suspicious login from 172.16.254.1. For verification he provided SSN
+456-78-9012. No further action needed.
+
+Notes: this file has no real personal information. It exists only to
+demonstrate pattern-based detection of emails, phone numbers, SSNs, IP
+addresses, and card numbers in free text.

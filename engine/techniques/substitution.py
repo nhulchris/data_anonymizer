@@ -40,8 +40,15 @@ class Substitution(Technique):
             return value  # unknown type: leave unchanged
         # Deterministic per (seed, pii_type, value): same input + same project
         # seed reproduces the same fake on every run, independent of row order.
-        _faker.seed_instance(store.value_seed(pii_type, value))
-        fake = str(provider())
+        # On collision (two originals drawing the same fake -- likely at tens
+        # of thousands of distinct values), retry with a salted seed until
+        # unique, still deterministically.
+        for attempt in range(10000):
+            salt = value if attempt == 0 else f"{value}|retry{attempt}"
+            _faker.seed_instance(store.value_seed(pii_type, salt))
+            fake = str(provider())
+            if not store.fake_taken(pii_type, fake):
+                break
         store.put(pii_type, value, fake)
         return fake
 

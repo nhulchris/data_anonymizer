@@ -20,6 +20,7 @@ class MappingStore:
     def __init__(self, seed: str = "team13-dev-seed"):
         self.seed = seed
         self._forward: dict[tuple[str, str], str] = {}
+        self._taken: set[tuple[str, str]] = set()
 
     def value_seed(self, pii_type: str, original: str) -> int:
         """Stable per-value integer seed derived from the project seed.
@@ -37,6 +38,14 @@ class MappingStore:
 
     def put(self, pii_type: str, original: str, fake: str) -> None:
         self._forward[(pii_type, original)] = fake
+        self._taken.add((pii_type, fake))
+
+    def fake_taken(self, pii_type: str, fake: str) -> bool:
+        """True if this fake is already assigned to some original of this
+        type. Generators consult this so two different originals never share
+        a fake -- large files would otherwise collide (birthday problem),
+        which breaks reversibility."""
+        return (pii_type, fake) in self._taken
 
     def items(self):
         return self._forward.items()

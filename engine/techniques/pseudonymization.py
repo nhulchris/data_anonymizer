@@ -34,12 +34,16 @@ class Pseudonymization(Technique):
         if existing is not None:
             return existing
         prefix = _PREFIXES.get(pii_type, "PII")
-        token_part = f"{store.value_seed(pii_type, value):016x}"[:8]
-        token = f"{prefix}_{token_part}"
-        # Emails keep a valid email shape so downstream parsers/apps that
-        # validate formats continue to work.
-        if pii_type == "email":
-            token = f"user_{token_part}@anon.example"
+        for attempt in range(10000):
+            salt = value if attempt == 0 else f"{value}|retry{attempt}"
+            token_part = f"{store.value_seed(pii_type, salt):016x}"[:8]
+            token = f"{prefix}_{token_part}"
+            # Emails keep a valid email shape so downstream parsers/apps that
+            # validate formats continue to work.
+            if pii_type == "email":
+                token = f"user_{token_part}@anon.example"
+            if not store.fake_taken(pii_type, token):
+                break
         store.put(pii_type, value, token)
         return token
 

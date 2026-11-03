@@ -887,7 +887,7 @@ function detectCurrentFile(){
   healthReady.then(()=>toB64(f)).then(b64=>{
     const fd=new FormData();
     fd.append('filename',f.name);
-    fd.append('content_b64',b64);
+    fd.append('content_file',new Blob([b64]),'content.b64');
     return fetch('/api/detect',{method:'POST',body:fd});
   }).then(async res=>{
     if(!res.ok){ const err=await res.json().catch(()=>({})); statusEl.textContent='Error: '+(err.detail||res.status); return; }
@@ -919,7 +919,7 @@ function handleAnonymize(e){
   toB64(f).then(b64=>{
     const fd=new FormData();
     fd.append('filename',f.name);
-    fd.append('content_b64',b64);
+    fd.append('content_file',new Blob([b64]),'content.b64');
     if(detectMode==='text'){
       const sel=document.getElementById('textTechSel');
       fd.append('technique', sel?sel.value:'substitution');
@@ -955,8 +955,8 @@ function handleRestore(e){
   Promise.all([toB64(f),toB64(k)]).then(([fb64,kb64])=>{
     const fd=new FormData();
     fd.append('filename',f.name);
-    fd.append('content_b64',fb64);
-    fd.append('key_b64',kb64);
+    fd.append('content_file',new Blob([fb64]),'content.b64');
+    fd.append('key_file',k);  // binary key file: no SQL-looking text, safe as a plain file part
     fd.append('passphrase',pass);
     return fetch('/api/restore',{method:'POST',body:fd});
   }).then(async res=>{

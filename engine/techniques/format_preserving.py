@@ -80,15 +80,19 @@ class FormatPreserving(Technique):
         existing = store.get(pii_type, value)
         if existing is not None:
             return existing
-        rng = random.Random(store.value_seed(pii_type, value))
-        if pii_type == "ip":
-            fake = _fake_ip(value, rng)
-        elif pii_type == "dob":
-            fake = _fake_date(value, rng)
-        else:
-            fake = _same_shape(value, rng)
-            if pii_type == "card":
-                fake = _luhn_fix(fake)
+        for attempt in range(10000):
+            salt = value if attempt == 0 else f"{value}|retry{attempt}"
+            rng = random.Random(store.value_seed(pii_type, salt))
+            if pii_type == "ip":
+                fake = _fake_ip(value, rng)
+            elif pii_type == "dob":
+                fake = _fake_date(value, rng)
+            else:
+                fake = _same_shape(value, rng)
+                if pii_type == "card":
+                    fake = _luhn_fix(fake)
+            if not store.fake_taken(pii_type, fake):
+                break
         store.put(pii_type, value, fake)
         return fake
 

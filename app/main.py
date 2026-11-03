@@ -48,6 +48,7 @@ async def _read_upload(
     file: UploadFile | None,
     filename: str | None = None,
     content_b64: str | None = None,
+    content_file: UploadFile | None = None,
 ) -> tuple[str, str, str]:
     """Return (extension, decoded text, original filename) or raise.
 
@@ -60,6 +61,11 @@ async def _read_upload(
     """
     if file is not None and file.filename:
         name, raw = file.filename, await file.read()
+    elif filename and content_file is not None:
+        # base64 delivered as a FILE part: text form fields are capped at
+        # 1 MB by the framework, file parts are not. This is the transport
+        # for anything beyond ~750 KB raw.
+        name, raw = filename, _decode_b64((await content_file.read()).decode("ascii", "ignore"))
     elif filename:
         # content_b64 may arrive as None for an empty file: browsers encode
         # zero bytes as an empty string, and FastAPI coerces empty optional
@@ -133,8 +139,9 @@ async def detect(
     file: UploadFile | None = File(None),
     filename: str | None = Form(None),
     content_b64: str | None = Form(None),
+    content_file: UploadFile | None = File(None),
 ):
-    ext, text, name = await _read_upload(file, filename, content_b64)
+    ext, text, name = await _read_upload(file, filename, content_b64, content_file)
 
     if ext in (".csv", ".json"):
         headers, rows = _parse_tabular(ext, text)
@@ -213,13 +220,14 @@ async def anonymize(
     file: UploadFile | None = File(None),
     filename: str | None = Form(None),
     content_b64: str | None = Form(None),
+    content_file: UploadFile | None = File(None),
     plan_json: str | None = Form(None),
     technique: str = Form("substitution"),   # used for .txt only
     seed: str = Form("team13-dev-seed"),
     reversible: bool = Form(False),
     passphrase: str = Form(""),
 ):
-    ext, text, name = await _read_upload(file, filename, content_b64)
+    ext, text, name = await _read_upload(file, filename, content_b64, content_file)
     valid = set(available_techniques())
     store = MappingStore(seed=seed)
     out_name = _out_name(name, ext)
@@ -286,12 +294,13 @@ async def restore(
     file: UploadFile | None = File(None),
     filename: str | None = Form(None),
     content_b64: str | None = Form(None),
+    content_file: UploadFile | None = File(None),
     key_file: UploadFile | None = File(None),
     key_b64: str | None = Form(None),
     passphrase: str = Form(...),
 ):
     """Restore an anonymized file to its originals using its key file."""
-    ext, text, name = await _read_upload(file, filename, content_b64)
+    ext, text, name = await _read_upload(file, filename, content_b64, content_file)
     if key_file is not None and key_file.filename:
         key_data = await key_file.read()
     elif key_b64 is not None:

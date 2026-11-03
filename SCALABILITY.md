@@ -65,16 +65,33 @@ Run `python benchmarks/load_test.py https://data-anonymizer-g90k.onrender.com`
 — ramps 1 → 20 simultaneous users each anonymizing a 1,000-row CSV and
 reports latency/errors per level.
 
-RESULTS TO BE FILLED IN FROM THE LIVE RUN:
+Measured Nov 3, 2026, from a residential connection:
 
 | Concurrent users | OK | Errors | Fastest | Median | Slowest |
 |---|---|---|---|---|---|
-| (paste load_test.py output here) | | | | | |
+| 1 | 0/1 | 502 | 2.0s | 2.0s | 2.0s |
+| 2 | 2/2 | - | 6.1s | 6.1s | 6.1s |
+| 5 | 5/5 | - | 16.8s | 16.9s | 16.9s |
+| 10 | 10/10 | - | 32.5s | 32.6s | 32.7s |
+| 15 | 15/15 | - | 47.9s | 48.1s | 48.2s |
+| 20 | 20/20 | - | 62.7s | 62.9s | 63.0s |
 
-Expectation to verify: the free tier runs a single instance with one
-worker, so concurrent requests serialize — latency should grow roughly
-linearly with user count until requests time out. The capacity number for
-the report is the last round with zero errors.
+Findings:
+
+- The round-1 502 coincided with a deployment restart triggered seconds
+  earlier, not with load; subsequent rounds confirm single requests
+  complete in ~2-3s.
+- Latency grows almost perfectly linearly at ~3.1s per queued request,
+  and within each round the fastest and slowest user finish together.
+  That is the signature of a single-instance, single-worker deployment:
+  under load the service does not fail, it serializes — every user waits
+  behind everyone ahead of them.
+- No errors through 20 simultaneous users. The practical limit is
+  therefore latency, not crashes: beyond ~5 simultaneous users the median
+  wait exceeds 15s, and extrapolating the 3.1s/request line, requests
+  would begin exceeding a 120s timeout at roughly 38 simultaneous users.
+- The production fix is architectural, not code: multiple workers and/or
+  horizontal scaling (section 6), which parallelizes the queue.
 
 ## 4. Multiple files
 

@@ -408,3 +408,26 @@ def test_serialize_does_not_modify_other_tables_unexpectedly():
     orders_idx = output.find("INSERT INTO orders")
     orders_section = output[orders_idx:]
     assert "Daniel Carter" in orders_section
+
+def test_extract_columns_ignores_commas_inside_parentheses():
+    create_statement = """
+    CREATE TABLE orders (
+        order_id INT,
+        amount DECIMAL(10,2),
+        PRIMARY KEY (order_id, amount)
+    )
+    """
+    assert extract_columns(create_statement) == ["order_id", "amount"]
+
+
+def test_parse_decimal_column_round_trip_is_valid_sql():
+    sql = (
+        "CREATE TABLE orders (order_id INT, amount DECIMAL(10,2));\n"
+        "INSERT INTO orders VALUES (1, 49.99);\n"
+    )
+    tables = parse(sql)
+    assert tables[0]["headers"] == ["order_id", "amount"]
+    assert tables[0]["rows"] == [["1", "49.99"]]
+    out = serialize(sql, tables)
+    assert "(order_id, amount)" in out
+    assert "(1, 49.99)" in out    

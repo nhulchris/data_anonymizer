@@ -8,6 +8,26 @@ everything else (DROP, UPDATE, DELETE, comments) passes through unchanged.
 
 from __future__ import annotations
 
+def _split_top_level(body: str) -> list[str]:
+    """Split on commas that are not inside parentheses or quotes, so
+    DECIMAL(10,2) and PRIMARY KEY (a, b) stay in one piece."""
+    parts, current, depth, in_quote = [], [], 0, False
+    for ch in body:
+        if ch == "'":
+            in_quote = not in_quote
+        elif not in_quote:
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+            elif ch == "," and depth == 0:
+                parts.append("".join(current))
+                current = []
+                continue
+        current.append(ch)
+    parts.append("".join(current))
+    return parts
+
 
 def extract_columns(create_statement: str) -> list[str]:
     """Pull column names out of a CREATE TABLE statement, in order."""
@@ -27,7 +47,7 @@ def extract_columns(create_statement: str) -> list[str]:
 
     columns = []
 
-    for line in body.split(","):
+    for line in _split_top_level(body):
         line = line.strip()
 
         if not line:

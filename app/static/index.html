@@ -791,9 +791,14 @@ function updateReviewSummary(){
 }
 function toggleRow(cb){
   const row=cb.closest('.col-row');
+  const sel=row.querySelector('select');
   row.classList.toggle('off',!cb.checked);
-  row.querySelector('select').disabled=!cb.checked;
+  sel.disabled=!cb.checked;
   row.classList.toggle('flagged',cb.checked);
+  if(cb.checked && sel.value==='__keep__'){
+    sel.value=[...sel.options].some(o=>o.value==='substitution')?'substitution':sel.options[0].value;
+    updateNote(sel);
+  }
   const typeLabel=row.querySelector('.ptype');
   if(typeLabel) typeLabel.lastChild.textContent=cb.checked?(row.dataset.pii==='true'?'PERSONAL DATA':'MANUAL OVERRIDE'):'NOT PROTECTED';
   updateReviewSummary();
@@ -826,18 +831,25 @@ function toB64(file){
     r.readAsDataURL(file);
   });
 }
-function techOptionsHtml(selectedSlug){
+function techOptionsHtml(selectedSlug, includeKeep=true){
   const list=API_TECHNIQUES.length?API_TECHNIQUES:Object.keys(TECH_LABELS);
-  return list.map(slug=>`<option value="${slug}"${slug===selectedSlug?' selected':''}>${TECH_LABELS[slug]||slug}</option>`).join('');
+  const opts=list.map(slug=>`<option value="${slug}"${slug===selectedSlug?' selected':''}>${TECH_LABELS[slug]||slug}</option>`).join('');
+  return includeKeep ? opts+`<option value="__keep__">Keep (don't anonymize)</option>` : opts;
 }
 healthReady.then(()=>{
   const sel=document.getElementById('defaultTechSel');
-  if(sel) sel.innerHTML=techOptionsHtml('substitution');
+  if(sel) sel.innerHTML=techOptionsHtml('substitution', false);
   const demoSlugs={demoSelName:'substitution',demoSelEmail:'partial_masking',demoSelSsn:'nulling',demoSelLoyalty:'substitution'};
   Object.keys(demoSlugs).forEach(id=>{
     const s=document.getElementById(id);
     if(s) s.innerHTML=techOptionsHtml(demoSlugs[id]);
   });
+});
+Object.assign(techniqueDetails,{
+  "Format-preserving":{note:"Same shape, new value",examples:{name:"Daniel Carter → same pattern, new letters",email:"j.smith@gmail.com → same pattern, new characters",ssn:"123-45-6789 → 483-27-6150",other:"4111111111111111 → 4927123498761112"}},
+  "Perturbation":{note:"Nudges numbers slightly",examples:{name:"Numeric values only",email:"Numeric values only",ssn:"Numeric values only",other:"Salary 102,543 → 101,980"}},
+  "Shuffling":{note:"Mixes values between rows",examples:{name:"Daniel ↔ Priya (swapped between rows)",email:"Emails swapped between rows",ssn:"SSNs swapped between rows",other:"City values swapped between rows"}},
+  "Synthetic":{note:"Brand-new artificial value",examples:{name:"Daniel Carter → Emma Williams",email:"j.smith@gmail.com → emma.williams@test.com",ssn:"123-45-6789 → 604-18-2275",other:"Gold → a generated value"}}
 });
 function noteFor(slug,kind){
   const label=TECH_LABELS[slug]||slug;
@@ -866,17 +878,37 @@ function renderTextMode(data){
   const wrap=document.getElementById('colsRows');
   document.getElementById('reviewPanel').classList.add('text-mode');
   const entries=Object.entries(data.matches_by_type||{});
-  const opts=techOptionsHtml('substitution');
+  const opts=techOptionsHtml('substitution', false);
   const {note,ex}=noteFor('substitution','other');
   const matchRows=entries.length
     ? entries.map(([t,n])=>`<div class="text-row"><span>${t}</span><span class="ptype-inline"><span class="type-dot"></span>${n} MATCH${n===1?'':'ES'}</span></div>`).join('')
     : '<p class="sub">No pattern-detectable PII found.</p>';
   wrap.innerHTML = `<div class="text-tech-row"><label for="textTechSel">Technique for this file (applies to every match below)</label><select id="textTechSel" onchange="updateTextNote(this)">${opts}</select><div class="technote"><span class="note-title" id="textNoteTitle">${note}</span><span class="ex" id="textNoteEx">${ex}</span></div></div>${matchRows}`;
 }
-function updateTextNote(sel){
-  const {note,ex}=noteFor(sel.value,'other');
-  document.getElementById('textNoteTitle').textContent=note;
-  document.getElementById('textNoteEx').textContent=ex;
+function updateNote(sel){
+  const row=sel.closest('.col-row');
+  const cb=row.querySelector('input[type=checkbox]');
+  const note=row.querySelector('.note-title');
+  const example=row.querySelector('.ex');
+  if(sel.value==='__keep__'){
+    // Keep = leave this column exactly as it is (same as unchecking it)
+    if(cb){ cb.checked=false; }
+    row.classList.add('off'); row.classList.remove('flagged');
+    const t=row.querySelector('.ptype');
+    if(t) t.lastChild.textContent='KEPT AS-IS';
+    if(note) note.textContent='Left exactly as it is';
+    if(example) example.textContent='Original values stay unchanged';
+    updateReviewSummary();
+    return;
+  }
+  if(cb && !cb.checked){ cb.checked=true; toggleRow(cb); }
+  const detail=techniqueDetails[TECH_LABELS[sel.value]||sel.value];
+  const kind=row.dataset.kind||'other';
+  if(note) note.textContent=detail?detail.note:'';
+  if(example) example.textContent=detail?(detail.examples[kind]||detail.examples.other):'';
+  row.classList.remove('technique-updated');
+  void row.offsetWidth;
+  row.classList.add('technique-updated');
 }
 function detectCurrentFile(){
   const f=document.getElementById('f1').files[0];

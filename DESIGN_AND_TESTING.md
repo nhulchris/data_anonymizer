@@ -1,11 +1,13 @@
-# Design, Approach, and Testing 
+# Design, Approach, and Testing
 
 ICS 499 Capstone — Team 13 Data Anonymizer
 
-
-This document covers the anonymization techniques, file parsers, and testing
-built for this project: three anonymization techniques (partial masking,
-generalization, nulling) and four file parsers (CSV, JSON, SQL, TXT).
+This document covers the anonymization techniques, file parsers, UI
+integration, and testing built for this project. The engine ships ten
+techniques in total. Sections 1 and 2 describe three of them (partial
+masking, generalization, nulling) and the four file parsers (CSV, JSON,
+SQL, TXT) in detail, and the last section explains why these ten were
+chosen from the course reference.
 
 ---
 
@@ -95,7 +97,8 @@ comments) that must not be touched.
    end of a statement.
 3. `extract_columns()` — pulls column names out of a `CREATE TABLE`
    statement, skipping constraint lines (`PRIMARY KEY`, `FOREIGN KEY`, etc.)
-   that aren't actual columns.
+   that aren't actual columns, and splitting only on commas outside
+   parentheses so types like `DECIMAL(10,2)` stay in one piece.
 4. `extract_row_groups()` — splits a multi-row `VALUES (...), (...), (...)`
    list into individual rows, tracking parenthesis depth and quotes so a
    comma inside a quoted address (`'123 Main St, Minneapolis, MN'`) doesn't
@@ -150,25 +153,28 @@ All four parsers and all three techniques rely on the same mechanism for
 consistency: `MappingStore` (`engine/mapping.py`, built by Chris) keys its
 mappings by `(pii_type, original_value)` and derives a per-value seed from
 a project seed using HMAC, so the same input always produces the same
-output, across columns, across tables, and across runs — without storing a
-reversible mapping or needing a lookup table shared between runs. Every
-parser and technique was tested against this requirement directly (see
-below).
+output, across columns, across tables, and across runs — without needing a
+lookup table shared between runs. Every parser and technique was tested
+against this requirement directly (see below).
 
 ---
 
 ## 4. Testing
 
 All testing uses `pytest` and is part of the project's automated test
-suite (109 tests passing project-wide as of this write-up). Each piece
+suite (177 tests passing project-wide as of this write-up). Each piece
 was built and verified in small, isolated steps before being combined.
 
 | File | Tests | Covers |
 |---|---|---|
-| `tests/test_techniques.py` | 43 | All 9 PII types × 3 techniques, empty values, unknown PII types, malformed input (e.g. unrecognized date formats) |
+| `tests/test_techniques.py` | 42 | All 9 PII types × 3 techniques, empty values, unknown PII types, malformed input (e.g. unrecognized date formats) |
 | `tests/test_parsers.py` | 4 | JSON parse/serialize round-trip, missing-key handling, empty-array error handling |
-| `tests/test_sql_parser.py` | 22 | Column extraction, statement/value splitting with quotes and escaped apostrophes, multi-row parsing, comment stripping, full multi-table parse/serialize against realistic data, anonymized-value round trip |
+| `tests/test_sql_parser.py` | 24 | Column extraction (including DECIMAL columns and composite keys), statement/value splitting with quotes and escaped apostrophes, multi-row parsing, comment stripping, full multi-table parse/serialize against realistic data, anonymized-value round trip |
 | `tests/test_txt_parser.py` | 16 | Each PII pattern individually, multiple types in one text, no-PII text left unchanged, cross-call consistency with a shared store |
+
+The table lists the tests for the techniques and parsers documented above.
+The remaining tests cover the engine, API, reversible mode, batch upload,
+pseudonymization and the newer techniques (see `SCALABILITY.md`).
 
 **Testing evidence beyond unit tests:** the SQL parser was additionally run
 against the project's actual Assignment-2-style test file (4 tables, 2
@@ -204,15 +210,15 @@ real FastAPI backend (`/api/detect`, `/api/anonymize`, `/api/restore`).
 The upload/review/download interface was redesigned for clarity: a
 per-column technique picker with a live plain-language description and
 example (e.g. "Hides part of the value — j.smith@gmail.com →
-j*****@gmail.com"), a Technique Guide page explaining all six supported
+j*****@gmail.com"), a Technique Guide page explaining all ten supported
 techniques, a Restore page for reversing an anonymized file given its key
 file and passphrase, and a local (browser-only) History log of files
 processed in the current session.
 
 The interface's JavaScript was wired directly to the real backend
-contract: files are sent as base64 inside a form field rather than a
-normal multipart upload, a detail that turned out to matter, see the
-403 finding below.
+contract. File content is sent as base64 text rather than raw bytes — first
+as a plain form field, and now as a file part — a detail that turned out to
+matter (see the 403 finding below and the upload ceiling bug in section 6).
 
 ### End-to-end results, by format
 
@@ -231,8 +237,10 @@ both one-way and reversible anonymization:
 1. **403 Forbidden on `.sql` uploads.** The hosting platform's edge
    firewall blocked raw request bodies that pattern-matched SQL syntax —
    which a legitimate `.sql` file upload naturally does. Fixed by sending
-   file content as base64 inside a form field instead of a raw multipart
-   file, which keeps the payload opaque to the pattern matcher.
+   file content as base64 text instead of raw bytes, which keeps the
+   payload opaque to the pattern matcher. It was first sent as a plain
+   form field; that caused a separate size problem, described in section 6,
+   and it is now sent as a file part.
 2. **TXT-mode layout bug.** The free-text review UI reused the same
    4-column grid built for tabular columns (checkbox + name + technique +
    example), but text-mode rows have no checkbox. Without one, the row's
@@ -256,22 +264,120 @@ backend correctly validating input:
   and an encrypted `.key` file); Restore expects those two files
   uploaded separately, not the zip itself. The server correctly returns
   400 for a `.zip` upload.
-- **Reversible mode with an incompatible technique.** Only Substitution,
-  Pseudonymization, and Hashing can be reversed; Generalization and
-  Partial Masking intentionally discard information and cannot be undone.
-  Selecting one of those while Reversible is checked correctly returns a
-  422 with a specific, readable error naming exactly which technique
-  isn't reversible.
+- **Reversible mode with an incompatible technique.** Only the
+  store-backed techniques can be reversed (the full boundary is in the
+  last section). Generalization and Partial Masking intentionally discard
+  information and cannot be undone. Selecting one of those while
+  Reversible is checked correctly returns a 422 with a specific, readable
+  error naming exactly which technique isn't reversible.
 
-Both are documented here as confirmed-correct behavior, and are worth
-keeping in mind for the UI: a clearer in-page explanation (e.g. detecting
-a `.zip` selected for Restore and prompting the user to unzip it first)
-would reduce this confusion for a first-time user, and is a reasonable
-follow-up improvement rather than a defect.
+The zip case now also has an in-page safeguard: selecting a `.zip` in
+either Restore upload box shows a message telling the user to unzip it
+first and upload the two files separately, instead of waiting for the
+server to reject it.
 
 ---
 
-## 6. Known Limitations Summary
+## 6. Scale and Performance Testing
+
+Following review feedback that the system should handle enterprise-scale
+data, the SQL and JSON parsers were stress-tested directly in Python (not
+through the website) against synthetic files that grew roughly 10x per
+round. Testing the parsers directly separates "does the parser scale" from
+"does the upload work", which mattered (see the upload finding below).
+
+### Results
+
+| Round | Format | Size | Scale | Parse | Anonymize | Serialize | Total |
+|---|---|---|---|---|---|---|---|
+| 1 | SQL | 4.2 MB | 120 tables, 30,000 rows | 3.29s | 0.22s | 2.01s | ~5.5s |
+| 2 | SQL | 23.2 MB | 500 tables, 250,000 rows | 13.25s | 0.20s | 11.42s | ~24.9s |
+| 3 | SQL | 234.6 MB | 1,000 tables, 2,500,000 rows | 140.17s | 1.07s | 125.27s | ~4.4 min |
+| 1 | JSON | 8.3 MB | 50,000 rows | 0.14s | 0.04s | 0.14s | ~0.3s |
+| 2 | JSON | 80 MB | 500,000 rows | 1.94s | 0.24s | 1.57s | ~3.8s |
+
+JSON round 3 (5 million rows, about 800 MB) was generated but could not
+be downloaded to the test machine, so JSON was verified through round 2
+only.
+
+### Findings
+
+- **Parse and serialize scale roughly linearly.** From round 2 to round 3
+  the SQL row count grew 10x, while parse time grew about 10.6x and
+  serialize time about 11x. There is no sign of a performance cliff, and a
+  234 MB, 2.5-million-row file completed without a crash or memory failure.
+- **The anonymize timings are optimistic.** The generated files reused only
+  about 100 to 400 distinct names, and repeated values are cheap lookups in
+  the mapping store. Real data with mostly unique emails and SSNs is slower:
+  the benchmark in `SCALABILITY.md` measured roughly 4,000 to 6,000 rows per
+  second for fully distinct data. The parse and serialize numbers above
+  carry over to real files; the anonymize numbers do not.
+- **The live site's limits come from hosting, not the parsers.** The
+  10 MB per-file cap is deliberate, and the free tier runs a single worker
+  (documented in `SCALABILITY.md`).
+
+### Upload ceiling bug
+
+While generating test files, files well under the intended 10 MB cap were
+rejected with "Part exceeded maximum size of 1024KB". Two near-identical
+CSVs pinned the boundary: 717 KB raw succeeded and 819 KB raw failed. The
+cause was the file content being sent as base64 text in a plain form
+field. Base64 adds about 33%, and the web framework limits a form field to
+about 1 MB, so the real ceiling was roughly 750 KB.
+
+The finding was reported with the exact numbers and the base64-as-file-part
+fix was made. After it, the 819 KB file and a 4.2 MB, 120-table SQL file
+are both detected correctly, and files over 10 MB are rejected with a clear
+message.
+
+---
+
+## 7. Post-Review Fixes and Additions
+
+### Bug: SQL column parsing broke on DECIMAL(10,2)
+
+`extract_columns` split a CREATE TABLE body on every comma, so
+`amount DECIMAL(10,2)` produced a fake column named `2)`, and `serialize()`
+then wrote invalid SQL. A composite `PRIMARY KEY (a, b)` caused the same
+problem. Earlier tests missed it because they only covered a table with no
+DECIMAL column.
+
+**Fix:** a helper that splits only on commas outside parentheses and
+quotes, plus two regression tests (column extraction, and a parse-serialize
+round trip that produces valid SQL). Test suite: 177 passing.
+
+### Bug: technique descriptions went blank after changing a dropdown
+
+The description lookup used display names ("Partial masking") but the
+dropdown values had become backend names (`partial_masking`), so changing a
+technique cleared its description and example. The four newest techniques
+also had no descriptions. Fixed by mapping backend names to display names
+and adding the missing entries.
+
+### Keep (don't anonymize)
+
+Each column's dropdown now includes a Keep option that leaves the column
+unchanged. It works by excluding the column from the plan sent to the
+backend, so no backend change was needed. Keep is deliberately absent from
+the free-text (TXT) dropdown and the Settings default, where it has no
+meaning.
+
+### Batch tab
+
+A new Batch tab uploads up to 20 files (CSV, JSON, SQL and TXT mixed) to
+`/api/anonymize_batch`. One technique is applied to every detected column
+in every file, and all files share one mapping store, so a person who
+appears in several files gets the same fake value in each. In reversible
+mode a single `batch.key` covers the whole batch.
+
+The page checks files before sending: supported type, not empty, under
+10 MB, no duplicate names, 20-file maximum. Verified manually with two CSVs
+and one TXT file that share the same people: the fake names and emails
+matched across all outputs, and a reversible run produced `batch.key`.
+
+---
+
+## 8. Known Limitations Summary
 
 - **JSON:** headers are taken from the first record only; a field missing
   from record 1 but present later is dropped.
@@ -287,6 +393,13 @@ follow-up improvement rather than a defect.
   interface has nothing to offer them to select. Supporting this would
   require a backend change to return all columns, not only the detected
   ones.
+- **Batch mode:** applies one technique to all files; per-column choices
+  are single-file only. Limits are 10 MB per file and 20 files per batch.
+- **Upload size:** 10 MB per file by design. Larger files would need
+  streaming or background processing (see `SCALABILITY.md`).
+- **Hosting:** the free-tier host runs one worker, so simultaneous users
+  queue (see `SCALABILITY.md`).
+
 ## Technique Scope: Why These Ten (added FP6, Chris)
 
 The course reference lists 14+ anonymization techniques. We implement ten,

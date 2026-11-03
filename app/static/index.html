@@ -442,6 +442,14 @@ button.primary:active,button.ghost:active{transform:scale(.97)}
 .text-tech-row{padding:2px 2px 16px;border-bottom:1px solid var(--hairline);margin-bottom:4px}
 .text-tech-row label{display:block;font-size:12.5px;font-weight:600;margin-bottom:8px}
 .text-tech-row select{width:100%;margin-bottom:10px}
+.dz-text .batch-count{display:block;margin-top:3px;font-family:'IBM Plex Mono',monospace;color:var(--muted);font-size:12.5px}
+#batch .panel{max-width:850px}
+.batch-row{display:flex;align-items:center;gap:12px;padding:10px 2px;border-bottom:1px solid var(--hairline);font-size:12.5px}
+.batch-row:last-child{border-bottom:none}
+.batch-name{flex:1;min-width:0;font-family:'IBM Plex Mono',monospace;overflow-wrap:anywhere}
+.batch-size{color:var(--muted);font-size:11.5px;white-space:nowrap}
+.batch-remove{min-height:34px;padding:6px 12px;font-size:12px}
+#batchList{margin-top:14px}
 
 </style>
 </head>
@@ -455,6 +463,7 @@ button.primary:active,button.ghost:active{transform:scale(.97)}
   <nav>
     <div class="nav-pill"></div>
     <button class="active" onclick="showView('home',this)">Home</button>
+    <button onclick="showView('batch',this)">Batch</button>
     <button onclick="showView('restore',this)">Restore</button>
     <button onclick="showView('guide',this)">Technique Guide</button>
     <button onclick="showView('history',this)">History</button>
@@ -575,7 +584,48 @@ button.primary:active,button.ghost:active{transform:scale(.97)}
       </div>
     </div>
   </div>
+  <!-- BATCH -->
+  <div class="view" id="batch">
+    <h1>Batch anonymize</h1>
+    <p class="page-sub">Anonymize up to 20 files at once. The same person gets the same fake value in every file, so records still line up across them.</p>
 
+    <div class="panel">
+      <h2>Files</h2>
+      <p class="sub">CSV, JSON, SQL and TXT can be mixed in one batch. Up to 20 files, 10 MB each.</p>
+      <label class="dropzone" for="fb">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3v12M12 3l-4 4M12 3l4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        <span class="dz-text"><b>Choose files</b> or drop them here <span class="batch-count" id="batchCount">No files chosen</span></span>
+        <input type="file" id="fb" multiple accept=".csv,.json,.sql,.txt">
+      </label>
+      <div id="batchList"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Technique</h2>
+      <p class="sub">One technique is applied to every detected column in every file. For per-column control, use a single file on the Home page.</p>
+      <div class="field" style="max-width:320px"><label for="batchTech">Technique</label><select id="batchTech"><option>Substitution</option></select></div>
+
+      <div class="check-row">
+        <input type="checkbox" id="batchRev" onchange="toggleBatchRev(this)">
+        <label for="batchRev">Reversible — one encrypted key file for the whole batch
+          <small>Works with Substitution, Pseudonymization and Hashing only.</small>
+        </label>
+      </div>
+      <div id="batchRevBox" style="display:none">
+        <div class="field" style="margin-top:14px">
+          <label for="batchPass">Set a passphrase for the key file</label>
+          <input type="password" id="batchPass" placeholder="••••••••••" autocomplete="new-password">
+        </div>
+        <div class="lock-note warn">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 9v4M12 16.5h.01M10.3 3.9 2.7 17a2 2 0 0 0 1.7 3h15.2a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+          <span><b>Save your passphrase somewhere safe.</b> We don't store it. If it's lost, the original data cannot be recovered.</span>
+        </div>
+      </div>
+
+      <div class="btnrow"><button class="primary" id="batchBtn" disabled onclick="handleBatch(event)">Anonymize batch &amp; download</button></div>
+      <p class="sub" id="batchStatus" style="margin:12px 0 0"></p>
+    </div>
+  </div>
   <!-- RESTORE -->
   <div class="view" id="restore">
     <h1>Restore a file</h1>
@@ -1073,6 +1123,86 @@ function checkForZip(){
   el.addEventListener('change', checkForZip);
   const zone=el.closest('.dropzone');
   if(zone) zone.addEventListener('drop', checkForZip);
+});
+// ---------- Batch upload (up to 20 files, one shared mapping store) ----------
+const BATCH_MAX_FILES=20, BATCH_MAX_BYTES=10*1024*1024, BATCH_EXTS=['.csv','.json','.sql','.txt'];
+let batchFiles=[];
+function fmtSize(n){ return n<1024?n+' B':n<1048576?(n/1024).toFixed(1)+' KB':(n/1048576).toFixed(1)+' MB'; }
+function renderBatchList(){
+  const list=document.getElementById('batchList');
+  const count=document.getElementById('batchCount');
+  document.getElementById('batchBtn').disabled=batchFiles.length===0;
+  count.textContent=batchFiles.length?batchFiles.length+' file'+(batchFiles.length===1?'':'s')+' selected':'No files chosen';
+  list.innerHTML=batchFiles.map((f,i)=>`<div class="batch-row"><span class="batch-name">${escapeHtml(f.name)}</span><span class="batch-size">${fmtSize(f.size)}</span><button type="button" class="ghost batch-remove" onclick="removeBatchFile(${i})" aria-label="Remove ${escapeHtml(f.name)}">Remove</button></div>`).join('');
+}
+function removeBatchFile(i){ batchFiles.splice(i,1); renderBatchList(); }
+function addBatchFiles(files){
+  const statusEl=document.getElementById('batchStatus');
+  const problems=[];
+  for(const f of files){
+    const lower=f.name.toLowerCase();
+    if(!BATCH_EXTS.some(e=>lower.endsWith(e))){ problems.push(f.name+': unsupported type'); continue; }
+    if(f.size===0){ problems.push(f.name+': file is empty'); continue; }
+    if(f.size>BATCH_MAX_BYTES){ problems.push(f.name+': larger than 10 MB'); continue; }
+    if(batchFiles.some(x=>x.name===f.name)){ problems.push(f.name+': already added'); continue; }
+    if(batchFiles.length>=BATCH_MAX_FILES){ problems.push(f.name+': batch is full (20 files max)'); continue; }
+    batchFiles.push(f);
+  }
+  renderBatchList();
+  statusEl.textContent=problems.length?'Skipped — '+problems.join('; '):'';
+}
+function toggleBatchRev(cb){
+  document.getElementById('batchRevBox').style.display=cb.checked?'block':'none';
+}
+async function handleBatch(e){
+  if(e) e.preventDefault();
+  const statusEl=document.getElementById('batchStatus');
+  const btn=document.getElementById('batchBtn');
+  if(!batchFiles.length){ statusEl.textContent='Add at least one file first.'; return; }
+  const rev=document.getElementById('batchRev').checked;
+  const pass=document.getElementById('batchPass').value;
+  if(rev && !pass){ statusEl.textContent='Enter a passphrase for reversible mode.'; return; }
+  btn.disabled=true;
+  statusEl.textContent='Anonymizing '+batchFiles.length+' file'+(batchFiles.length===1?'':'s')+'… large files can take a while.';
+  try{
+    const fd=new FormData();
+    for(const f of batchFiles){
+      const b64=await toB64(f);
+      fd.append('files', new Blob([b64]), f.name);   // part filename = real filename
+    }
+    fd.append('technique', document.getElementById('batchTech').value);
+    if(rev){ fd.append('reversible','true'); fd.append('passphrase',pass); }
+    const res=await fetch('/api/anonymize_batch',{method:'POST',body:fd});
+    if(!res.ok){
+      const err=await res.json().catch(()=>({}));
+      statusEl.textContent='Error: '+(err.detail||res.status);
+      return;
+    }
+    const blob=await res.blob();
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='anonymized_batch.zip';
+    a.click();
+    statusEl.textContent='Done — anonymized_batch.zip downloaded'+(rev?' (includes batch.key; keep it and your passphrase safe).':'.');
+    addHistoryEntry(batchFiles.length+' files (batch)','BATCH',rev);
+  }catch(err){
+    statusEl.textContent='Could not reach the server.';
+  }finally{
+    btn.disabled=batchFiles.length===0;
+  }
+}
+const fbEl=document.getElementById('fb');
+if(fbEl){
+  fbEl.addEventListener('change',()=>{ addBatchFiles([...fbEl.files]); fbEl.value=''; });
+  const fbZone=fbEl.closest('.dropzone');
+  if(fbZone) fbZone.addEventListener('drop',e=>{
+    if(e.dataTransfer && e.dataTransfer.files){ addBatchFiles([...e.dataTransfer.files]); }
+    fbEl.value='';
+  });
+}
+healthReady.then(()=>{
+  const s=document.getElementById('batchTech');
+  if(s) s.innerHTML=techOptionsHtml('substitution', false);
 });
 (function(){
   let theme = 'light';

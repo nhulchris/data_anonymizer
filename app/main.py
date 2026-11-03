@@ -80,10 +80,15 @@ async def _read_upload(
         raise HTTPException(400, f"Unsupported file type. Supported: {', '.join(SUPPORTED)}")
     if len(raw) > MAX_UPLOAD_BYTES:
         raise HTTPException(413, "File larger than 10 MB")
-    try:
-        return ext, raw.decode("utf-8-sig"), name
-    except UnicodeDecodeError:
-        raise HTTPException(400, "File is not valid UTF-8 text")
+    for encoding in ("utf-8-sig", "utf-16", "latin-1"):
+        try:
+            if encoding == "utf-16" and not raw.startswith((b"\xff\xfe", b"\xfe\xff")):
+                continue  # only try utf-16 when a BOM says so
+            return ext, raw.decode(encoding), name
+        except UnicodeDecodeError:
+            continue
+    # latin-1 never fails, so this is unreachable in practice; kept for safety
+    raise HTTPException(400, "File encoding not recognized; save as UTF-8 and retry")
 
 
 def _parse_tabular(ext: str, text: str) -> tuple[list[str], list[list[str]]]:
@@ -287,6 +292,67 @@ async def anonymize(
     if reversible:
         return _reversible_response(out_text, out_name, store, passphrase)
     return _stream(out_text, out_name, "text/plain")
+
+
+@app.post("/api/anonymize_batch")
+async def anonymize_batch(
+    files: list[UploadFile] = File(...),
+    seed: str = Form("team13-dev-seed"),
+    technique: str = Form("substitution"),
+    reversible: bool = Form(False),
+    passphrase: str = Form(""),
+):
+    """Anonymize several files in one request with ONE shared mapping store:
+    the same person appearing in different files gets the same fake in all
+    of them. Files arrive as repeated parts named 'files', each a base64
+    payload whose part filename is the REAL filename (so extension dispatch
+    works). Auto-detection + one technique for all files (per-column plans
+    are single-file mode). Returns a zip; in reversible mode, one key file
+    covers the whole batch."""
+    if not files:
+        raise HTTPException(400, "No files provided")
+    if len(files) > 20:
+        raise HTTPException(413, "At most 20 files per batch")
+    if reversible:
+        if not passphrase:
+            raise HTTPException(422, "Reversible mode requires a passphrase")
+        _check_reversible({technique})
+    valid = set(available_techniques())
+    if technique not in valid:
+        raise HTTPException(422, f"Unknown technique: {technique!r}")
+
+    store = MappingStore(seed=seed)
+    outputs: list[tuple[str, str]] = []
+    for up in files:
+        ext, text, name = await _read_upload(None, up.filename, None, up)
+        out_name = _out_name(name, ext)
+        if ext in (".csv", ".json"):
+            headers, rows = _parse_tabular(ext, text)
+            plan = pipeline.build_plan(headers, rows, technique)
+            result = pipeline.run(headers, rows, plan, store)
+            out_text = (csv_parser.serialize(result.headers, result.rows) if ext == ".csv"
+                        else json_parser.serialize(result.headers, result.rows))
+        elif ext == ".sql":
+            tables = sql_parser.parse(text)
+            if not tables:
+                raise HTTPException(400, f"{name}: no CREATE TABLE/INSERT statements found")
+            out_tables, _, _ = pipeline.run_tables(tables, store, None, technique)
+            out_text = sql_parser.serialize(text, out_tables)
+        else:
+            out_text = txt_parser.anonymize_text(text, store, technique)
+        outputs.append((out_name, out_text))
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for out_name, out_text in outputs:
+            z.writestr(out_name, out_text)
+        if reversible:
+            z.writestr("batch.key", keyfile.create_keyfile(store, passphrase))
+    buf.seek(0)
+    return StreamingResponse(
+        buf, media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="anonymized_batch.zip"'},
+    )
 
 
 @app.post("/api/restore")

@@ -49,6 +49,15 @@ class Substitution(Technique):
             fake = str(provider())
             if not store.fake_taken(pii_type, fake):
                 break
+        else:
+            # Pool exhausted (distinct values approach Faker's pool size):
+            # force uniqueness with a deterministic suffix rather than ever
+            # reusing a fake, which would break reversibility.
+            n = 2
+            base = fake
+            while store.fake_taken(pii_type, fake):
+                fake = f"{base} {n}"
+                n += 1
         store.put(pii_type, value, fake)
         return fake
 

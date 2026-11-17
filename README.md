@@ -14,7 +14,7 @@ exactly — without the key file and passphrase, originals are unrecoverable.
 ## Stack
 
 Python 3.10+ · FastAPI · Faker · cryptography · pytest. Deployed on Render,
-auto-deploy from `main`. 159 automated tests.
+auto-deploy from `main`. 182 automated tests.
 
 ## Run locally
 
@@ -44,6 +44,14 @@ Try it with `samples/customers.csv` (single table) or `samples/company.sql`
   format-preserving masking are store-backed; anonymizing with a passphrase
   yields a zip with the anonymized file + encrypted `.key` file, and
   `/api/restore` brings the originals back exactly
+- **Batch:** up to 20 mixed-format files in one run (Batch tab /
+  `/api/anonymize_batch`) with one shared mapping store — the same person
+  gets the same fake across every file — and one key file in reversible mode
+- **User control:** per-column technique override, including keep (don't
+  anonymize) for correcting detection
+- **Measured limits:** benchmarks and a live load test in `SCALABILITY.md`
+  (~5-6k rows/sec fully-distinct, 1M realistic rows ~15s, 20 concurrent
+  users without failures on free-tier hosting)
 - **Consistency:** the same original value maps to the same fake, within a
   file and across SQL tables; runs are reproducible per project seed
 
@@ -94,3 +102,6 @@ samples/    demo datasets
 - `FP_iteration_plan.md` — week-by-week plan (living document)
 - `DESIGN_AND_TESTING.md` — design, testing evidence, technique scope
   rationale
+- `SCALABILITY.md` — measured benchmarks, load test, limits, production path
+- `AI_DATA_PROMPT.md` — verified prompts for generating compatible test
+  data with AI tools

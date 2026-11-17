@@ -32,3 +32,26 @@
 4. Format-preserving masking
 5. UI preview/polish
 6. Stretch items (first to drop)
+
+
+## Plan changes log (added FP10, Nov 17)
+
+This plan is the FP2 baseline the final self-evaluation compares against;
+rows above are intentionally left as originally written. Changes along the
+way:
+
+- FP6 review (Oct 20): instructor directed a scalability/limits focus —
+  measured benchmarks, concurrent-user load testing, multiple-file support —
+  in place of remaining feature expansion. Delivered across FP7-FP8.
+- FP7 class session canceled (instructor traveling); FP8 session canceled
+  (travel delay). Work continued; signoffs submitted per instructor's email.
+- Delivered ahead of plan: JSON (FP3-4 era), TXT support (unplanned),
+  reversible mode (FP6 built in FP5 week), format-preserving masking and
+  fuzz hardening (FP7 items done by FP6), all four stretch techniques.
+- Added beyond plan: batch multi-file upload, SCALABILITY.md with measured
+  limits, AI_DATA_PROMPT.md, encoding tolerance, collision-proof mappings.
+- Descoped (documented in self-evaluation): in-app before/after preview,
+  XLSX support. 10 MB upload cap held by decision (streaming documented as
+  the production path).
+- FP9 (Nov 10): presentation confirmed Nov 24; closing split — Chris: deck,
+  final stress test, AI prompt spec; Sophie: user tutorial video.

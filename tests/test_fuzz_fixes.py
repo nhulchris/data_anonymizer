@@ -42,3 +42,25 @@ def test_person_names_still_flagged():
     assert detect_column("name") == "name"
     assert detect_column("first_name") == "name"
     assert detect_column("username") == "name"
+
+
+class TestIdentifierSuppression:
+    """5-digit IDs were being flagged as ZIP codes by the value-pattern
+    fallback (Sophie's SQL stress test: 804 detected vs 720 expected)."""
+
+    def test_customer_id_not_flagged_as_zip(self):
+        assert detect_column("customer_id", ["10001", "10002", "10003"]) is None
+
+    def test_order_num_not_flagged(self):
+        assert detect_column("order_num", ["41143", "55401", "60601"]) is None
+
+    def test_real_zip_still_caught_by_name(self):
+        assert detect_column("zip_code", ["55401", "55402"]) == "zip"
+        assert detect_column("zip", ["55401"]) == "zip"
+
+    def test_value_fallback_still_works_elsewhere(self):
+        assert detect_column("contact", ["a@b.com", "c@d.org", "e@f.net"]) == "email"
+
+    def test_name_detection_beats_suppression(self):
+        # ssn_number ends in an identifier suffix but matches by NAME first
+        assert detect_column("ssn_number", ["123-45-6789"]) == "ssn"

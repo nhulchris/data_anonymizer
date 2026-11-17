@@ -44,6 +44,14 @@ VALUE_PATTERNS: dict[str, re.Pattern] = {
 # product_name, item_name, file_name, host_name, brand_name are not PII.
 NON_PERSON_PREFIXES = {"product", "item", "file", "host", "brand", "table", "column", "db", "server"}
 
+# Headers whose LAST token marks them as identifiers/counters: customer_id,
+# order_num, row_count. Their values often look like PII by pattern alone
+# (a 5-digit id matches the ZIP pattern), so the value-pattern fallback is
+# skipped for them. Name-based detection still applies (zip_code, ssn_number
+# are caught by name before the fallback is ever consulted).
+IDENTIFIER_SUFFIXES = {"id", "ids", "key", "num", "number", "no", "code",
+                       "count", "total", "qty", "index", "idx", "seq"}
+
 
 def _normalize(header: str) -> str:
     return re.sub(r"[^a-z0-9]", "", header.lower())
@@ -73,6 +81,9 @@ def detect_column(header: str, sample_values: list[str] | None = None) -> str | 
                     best = (len(kw), pii_type)
     if best:
         return best[1]
+
+    if tokens and tokens[-1] in IDENTIFIER_SUFFIXES:
+        return None  # identifier column: never flag by value pattern
 
     if sample_values:
         values = [v.strip() for v in sample_values if v and v.strip()]

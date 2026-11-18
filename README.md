@@ -11,6 +11,18 @@ exactly — without the key file and passphrase, originals are unrecoverable.
 **Live app:** https://data-anonymizer-g90k.onrender.com (free tier — hit
 `/api/health` first to wake it before a demo)
 
+## How it works
+
+```mermaid
+flowchart LR
+    A["Upload a file<br/>CSV, JSON, SQL or TXT"] --> B["Detect personal data<br/>by column name, then value pattern"]
+    B --> C["Review and choose<br/>a technique per column,<br/>or Keep it as is"]
+    C --> D["Anonymize<br/>using a shared mapping store"]
+    D --> E["Download the<br/>anonymized file"]
+    D -.->|"Reversible mode"| F["Encrypted key file<br/>plus passphrase"]
+    F --> G["Restore the<br/>original data"]
+```
+
 ## Stack
 
 Python 3.10+ · FastAPI · Faker · cryptography · pytest. Deployed on Render,
@@ -55,6 +67,52 @@ Try it with `samples/customers.csv` (single table) or `samples/company.sql`
 - **Consistency:** the same original value maps to the same fake, within a
   file and across SQL tables; runs are reproducible per project seed
 
+## Techniques at a glance
+
+| Technique | What it does | Example | Reversible |
+|---|---|---|---|
+| Substitution | Replaces the value with a realistic fake of the same type | Daniel Carter → Brittney Cameron | Yes |
+| Pseudonymization | Consistent fake value: same input, same output | Daniel Carter → Brittney Cameron (every time) | Yes |
+| Hashing | One-way scrambled code | daniel.carter@example.com → 9f86d08188... | Yes |
+| Format-preserving | Same shape, new value | 4111111111111111 → 4927123498761112 | Yes |
+| Partial masking | Hides part of the value | j.smith@gmail.com → j*****@gmail.com | No |
+| Generalization | Reduces precision | 1990-05-15 → 1990 | No |
+| Nulling | Removes the value | 123-45-6789 → (blank) | No |
+| Shuffling | Mixes a column's values between rows | City values swapped between records | No |
+| Perturbation | Nudges numbers slightly | Age 37 → 38 | No |
+| Synthetic | Generates a brand-new artificial value | Emma Williams, emma.williams@test.com | No |
+
+"Reversible" means the original can be restored with the key file and the
+passphrase. The other six remove or replace information on purpose, and the
+app refuses to run them in reversible mode.
+
+## Consistency across files
+
+```mermaid
+flowchart LR
+    A["batch_a.csv<br/>John Smith"] --> M["Shared mapping store<br/>keyed by PII type and value"]
+    B["batch_b.csv<br/>John Smith"] --> M
+    C["notes.txt<br/>John Smith"] --> M
+    M --> F["One fake identity<br/>in every output file"]
+```
+
+## Reversible mode
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant UI as Web page
+    participant API as FastAPI
+    User->>UI: Upload a file, tick Reversible, set a passphrase
+    UI->>API: POST /api/anonymize
+    API->>API: Anonymize and record the mapping
+    API->>API: Encrypt the mapping with the passphrase (PBKDF2 and Fernet)
+    API-->>UI: Zip with the anonymized file and a .key file
+    User->>UI: Later, upload both files and the passphrase
+    UI->>API: POST /api/restore
+    API-->>UI: Original values restored
+```
+
 ## Layout
 
 ```
@@ -66,6 +124,35 @@ engine/     detection, mapping, pipeline,
 parsers/    CSV, JSON, SQL, TXT             (owner: Sophie)
 tests/      pytest suite                    (shared)
 samples/    demo datasets
+```
+
+### Architecture
+
+```mermaid
+flowchart TB
+    subgraph Browser
+        UI["Web page<br/>app/static/index.html"]
+    end
+    subgraph App["FastAPI app (app/main.py)"]
+        EP["/api/detect<br/>/api/anonymize<br/>/api/anonymize_batch<br/>/api/restore<br/>/api/health"]
+    end
+    subgraph Parsers["parsers/"]
+        P["csv, json, sql, txt"]
+    end
+    subgraph Engine["engine/"]
+        D["detection"]
+        PL["pipeline"]
+        M["mapping store"]
+        T["10 techniques"]
+        K["key file (encrypted)"]
+    end
+    UI -->|"upload as a base64 file part"| EP
+    EP --> P
+    EP --> PL
+    PL --> D
+    PL --> T
+    T --> M
+    EP --> K
 ```
 
 ## Design decisions

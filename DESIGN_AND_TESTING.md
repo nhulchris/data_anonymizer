@@ -344,7 +344,23 @@ DECIMAL column.
 
 **Fix:** a helper that splits only on commas outside parentheses and
 quotes, plus two regression tests (column extraction, and a parse-serialize
-round trip that produces valid SQL). Test suite: 182 passing.
+round trip that produces valid SQL). Test suite: 177 passing at the time
+of this fix (182 after the later detection fix below).
+
+### Bug: ID columns were flagged as ZIP codes
+
+On a large stress-test file, the value-pattern fallback in detection flagged
+columns such as `customer_id` and `order_num` as ZIP codes, because their
+values happened to be 5 digits. This produced false positives: 804 PII
+columns detected, many of them not personal data. Column names were checked
+first, but a column whose name matched nothing fell through to the value
+pattern.
+
+**Fix (Chris):** columns whose names end in an identifier suffix (id, key,
+num, number, no, code, count, total, qty, index, idx, seq) now skip the
+value-pattern fallback. The same file now detects 720 PII columns. The
+per-column Keep option still covers any false positives that remain.
+Test suite: 182 passing.
 
 ### Bug: technique descriptions went blank after changing a dropdown
 
@@ -353,17 +369,6 @@ dropdown values had become backend names (`partial_masking`), so changing a
 technique cleared its description and example. The four newest techniques
 also had no descriptions. Fixed by mapping backend names to display names
 and adding the missing entries.
-
-### Bug: ID columns flagged as ZIP codes
-
-On the 120-table stress-test file, detection reported 804 PII columns
-where 720 were expected (120 tables × 6). In tables whose `customer_id`
-values were 5 digits long, the value-pattern fallback read them as ZIP
-codes. I reported the mismatch to Chris, who changed detection so columns
-whose names end in an identifier word (id, key, num, number, no, code,
-count, total, qty, index, seq) skip the value-pattern fallback; name-based
-detection still applies. After pulling the fix, the same file reports 720
-columns. Test suite: 182 passing.
 
 ### Keep (don't anonymize)
 

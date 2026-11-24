@@ -162,7 +162,7 @@ against this requirement directly (see below).
 ## 4. Testing
 
 All testing uses `pytest` and is part of the project's automated test
-suite (177 tests passing project-wide as of this write-up). Each piece
+suite (182 tests passing project-wide as of this write-up). Each piece
 was built and verified in small, isolated steps before being combined.
 
 | File | Tests | Covers |
@@ -344,7 +344,23 @@ DECIMAL column.
 
 **Fix:** a helper that splits only on commas outside parentheses and
 quotes, plus two regression tests (column extraction, and a parse-serialize
-round trip that produces valid SQL). Test suite: 177 passing.
+round trip that produces valid SQL). Test suite: 177 passing at the time
+of this fix (182 after the later detection fix below).
+
+### Bug: ID columns were flagged as ZIP codes
+
+On a large stress-test file, the value-pattern fallback in detection flagged
+columns such as `customer_id` and `order_num` as ZIP codes, because their
+values happened to be 5 digits. This produced false positives: 804 PII
+columns detected, many of them not personal data. Column names were checked
+first, but a column whose name matched nothing fell through to the value
+pattern.
+
+**Fix (Chris):** columns whose names end in an identifier suffix (id, key,
+num, number, no, code, count, total, qty, index, idx, seq) now skip the
+value-pattern fallback. The same file now detects 720 PII columns. The
+per-column Keep option still covers any false positives that remain.
+Test suite: 182 passing.
 
 ### Bug: technique descriptions went blank after changing a dropdown
 
